@@ -10,10 +10,15 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
     api_base_url: str = "http://127.0.0.1:8000"
 
-    infobip_base_url: str = ""
-    infobip_api_key: str = ""
-    infobip_sender: str = ""
-    alert_phone_number: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_secure: bool = False
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_from: str = ""
+    smtp_from_name: str = "Network Traffic Monitor"
+    alert_email_to: str = ""
+    email_alerts_enabled: bool = True
 
     agent_mode: str = "sample"
     agent_interval_seconds: float = 5.0

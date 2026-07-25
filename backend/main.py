@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from nta.alert_service import list_alert_deliveries, send_test_email_alert
 from nta.auth import (
     authenticate_user,
     create_access_token,
@@ -30,9 +31,10 @@ from nta.network_service import (
     remove_known_device,
     run_network_scan,
 )
-from nta.models import Anomaly, AnomalyFeedback, AnomalyStatus, DiscoveredDevice, KnownDevice, NetworkScan, Role, TrafficLog, User
+from nta.models import AlertDelivery, Anomaly, AnomalyFeedback, AnomalyStatus, DiscoveredDevice, KnownDevice, NetworkScan, Role, TrafficLog, User
 from nta.password_strength import analyze_password_strength
 from nta.schemas import (
+    AlertDeliveryResponse,
     AnomalyFeedbackRequest,
     AnomalyResponse,
     DashboardStats,
@@ -272,6 +274,26 @@ def review_anomaly(
     return _anomaly_response(anomaly)
 
 
+@app.get("/api/alerts/delivery", response_model=list[AlertDeliveryResponse])
+def get_alert_deliveries(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[AlertDeliveryResponse]:
+    deliveries = list_alert_deliveries(db, limit=limit)
+    return [_alert_delivery_response(item) for item in deliveries]
+
+
+@app.post("/api/alerts/test-email", response_model=AlertDeliveryResponse)
+def send_test_alert_email(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> AlertDeliveryResponse:
+    delivery = send_test_email_alert(db)
+    log_audit(db, current_user.id, "test_email_alert", f"Test email status: {delivery.status}")
+    return _alert_delivery_response(delivery)
+
+
 @app.post("/api/network/scans", response_model=NetworkScanResponse)
 async def create_network_scan(
     payload: NetworkScanRequest,
@@ -345,6 +367,22 @@ async def create_network_scan_internal(
 ) -> NetworkScanResponse:
     scan = await asyncio.to_thread(run_network_scan, payload.subnet_prefix, None)
     return _network_scan_response(scan)
+
+
+def _alert_delivery_response(delivery: AlertDelivery) -> AlertDeliveryResponse:
+    created_at = delivery.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return AlertDeliveryResponse(
+        id=delivery.id,
+        anomaly_id=delivery.anomaly_id,
+        channel=delivery.channel,
+        recipient=delivery.recipient,
+        subject=delivery.subject,
+        status=delivery.status,
+        error_detail=delivery.error_detail,
+        created_at=created_at.isoformat(),
+    )
 
 
 def _network_scan_response(scan: NetworkScan) -> NetworkScanResponse:

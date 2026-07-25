@@ -159,3 +159,19 @@ class DiscoveredDevice(Base):
     discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     scan: Mapped["NetworkScan"] = relationship(back_populates="devices")
+
+
+class AlertDelivery(Base):
+    __tablename__ = "alert_deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    anomaly_id: Mapped[int | None] = mapped_column(ForeignKey("anomalies.id"))
+    channel: Mapped[str] = mapped_column(String(20), nullable=False, default="email")
+    recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    error_detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    anomaly: Mapped["Anomaly | None"] = relationship()

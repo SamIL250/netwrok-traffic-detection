@@ -72,14 +72,20 @@ The **same** `AGENT_API_KEY` must be set on the server and used by the traffic c
 - `POST /api/traffic/logs` (traffic ingest)
 - `POST /api/internal/detection/run` (agent-triggered detection)
 
-Optional SMS alert settings (Infobip):
+Optional SMTP email alert settings:
 
 ```env
-INFOBIP_BASE_URL=
-INFOBIP_API_KEY=
-INFOBIP_SENDER=
-ALERT_PHONE_NUMBER=
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=Network Monitor <your-email@gmail.com>
+ALERT_EMAIL_TO=your-email@gmail.com
+EMAIL_ALERTS_ENABLED=true
 ```
+
+For Gmail, use an [App Password](https://support.google.com/accounts/answer/185833), not your normal account password.
 
 ---
 

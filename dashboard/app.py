@@ -56,7 +56,10 @@ def main() -> None:
     token = require_login()
 
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Network Scan", "Traffic Logs", "Anomalies", "Password Checker"])
+    page = st.sidebar.radio(
+        "Go to",
+        ["Dashboard", "Network Scan", "Traffic Logs", "Anomalies", "Email Alerts", "Password Checker"],
+    )
     if st.sidebar.button("Logout"):
         clear_session()
         st.rerun()
@@ -80,6 +83,8 @@ def main() -> None:
         render_traffic_logs(token)
     elif page == "Anomalies":
         render_anomalies(token, me["role"])
+    elif page == "Email Alerts":
+        render_email_alerts(token, me["role"])
     else:
         render_password_checker(token)
 
@@ -260,6 +265,43 @@ def render_anomalies(token: str, role: str) -> None:
                     if response.status_code == 200:
                         st.success("Marked as false positive")
                         st.rerun()
+
+
+def render_email_alerts(token: str, role: str) -> None:
+    st.title("Email Alerts")
+    st.caption("Critical anomalies trigger SMTP email alerts and delivery history is stored here.")
+
+    deliveries = api_request("GET", "/api/alerts/delivery", token, params={"limit": 50}).json()
+    sent_count = sum(1 for item in deliveries if item["status"] == "sent")
+    failed_count = sum(1 for item in deliveries if item["status"] == "failed")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Alerts", len(deliveries))
+    col2.metric("Sent", sent_count)
+    col3.metric("Failed", failed_count)
+
+    if role == "admin":
+        if st.button("Send Test Email"):
+            response = api_request("POST", "/api/alerts/test-email", token)
+            if response.status_code == 200:
+                result = response.json()
+                if result["status"] == "sent":
+                    st.success(f"Test email sent to {result['recipient']}")
+                else:
+                    st.error(f"Test email failed: {result['error_detail']}")
+                st.rerun()
+            else:
+                st.error("Could not send test email.")
+
+    if not deliveries:
+        st.info("No email alerts yet. They are sent automatically when high-severity anomalies are detected.")
+        return
+
+    df = pd.DataFrame(deliveries)
+    st.dataframe(
+        df[["created_at", "status", "recipient", "subject", "error_detail", "anomaly_id"]],
+        use_container_width=True,
+    )
 
 
 def render_password_checker(token: str) -> None:

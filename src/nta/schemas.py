@@ -119,3 +119,14 @@ class DiscoveredDeviceResponse(BaseModel):
     discovered_at: str
     status: str
 
+
+class AlertDeliveryResponse(BaseModel):
+    id: int
+    anomaly_id: int | None
+    channel: str
+    recipient: str
+    subject: str
+    status: str
+    error_detail: str
+    created_at: str
+

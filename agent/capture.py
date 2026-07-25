@@ -38,7 +38,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.mode == "scan":
-        scan_local_hosts(args.subnet_prefix)
+        scan_local_hosts(args.subnet_prefix, args.api_base_url, settings.agent_api_key)
         return
 
     config = build_config(args)

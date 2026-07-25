@@ -23,7 +23,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Continuous real-time monitoring** — agent runs as a background service via `--daemon` and start/stop scripts
 - [x] **Automatic anomaly detection** — scheduled in the API and triggered after each agent capture batch
 - [x] **Secure the traffic agent** — `/api/traffic/logs` requires `X-Agent-Api-Key` header
-- [ ] **Network scanner in the dashboard** — scan exists in CLI only; show active/unauthorized devices in UI and save results to DB
+- [x] **Network scanner in the dashboard** — scan active/unauthorized devices, save results to DB, authorize devices
 - [ ] **SMS alerts end-to-end** — configure Infobip, test delivery, show alert status in dashboard
 - [ ] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)
 - [ ] **Traffic log filters** — add date range filtering (PDF mentions date + IP; currently IP only)
@@ -94,7 +94,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Anomaly alert generation | Partial (automatic + manual trigger) |
 | SMS alerts | Not configured |
 | Traffic logs (filter + export) | Partial (IP filter + CSV) |
-| Network device scan | Partial (CLI only) |
+| Network device scan | Done (dashboard + DB + CLI via agent) |
 | Retraining / feedback model | Partial (threshold only) |
 | PDF reporting | Not started |
 | User management | Partial (API only) |

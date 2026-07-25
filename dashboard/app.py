@@ -10,12 +10,12 @@ from nta.config import settings
 st.set_page_config(page_title="Network Traffic Monitor", layout="wide")
 
 
-def api_request(method: str, path: str, token: str | None = None, **kwargs: object) -> requests.Response:
+def api_request(method: str, path: str, token: str | None = None, timeout: int = 20, **kwargs: object) -> requests.Response:
     headers = kwargs.pop("headers", {})
     if token:
         headers["Authorization"] = f"Bearer {token}"
     url = f"{settings.api_base_url.rstrip('/')}{path}"
-    return requests.request(method, url, headers=headers, timeout=20, **kwargs)
+    return requests.request(method, url, headers=headers, timeout=timeout, **kwargs)
 
 
 def login(username: str, password: str) -> str | None:
@@ -56,7 +56,7 @@ def main() -> None:
     token = require_login()
 
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Dashboard", "Traffic Logs", "Anomalies", "Password Checker"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Network Scan", "Traffic Logs", "Anomalies", "Password Checker"])
     if st.sidebar.button("Logout"):
         st.session_state.token = None
         st.rerun()
@@ -66,6 +66,8 @@ def main() -> None:
 
     if page == "Dashboard":
         render_dashboard(token)
+    elif page == "Network Scan":
+        render_network_scan(token, me["role"])
     elif page == "Traffic Logs":
         render_traffic_logs(token)
     elif page == "Anomalies":
@@ -106,6 +108,92 @@ def render_dashboard(token: str) -> None:
             st.success(f"Detection complete. New anomalies: {len(anomalies)}")
         else:
             st.error("Detection failed")
+
+
+def render_network_scan(token: str, role: str) -> None:
+    st.title("Network Scanner")
+    st.caption("Discover active hosts on the network and flag unauthorized devices.")
+
+    scans = api_request("GET", "/api/network/scans", token, params={"limit": 1}).json()
+    if scans:
+        latest = scans[0]
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Active Devices", latest["device_count"])
+        col2.metric("Unauthorized Devices", latest["unauthorized_count"])
+        col3.metric("Last Scan", latest["completed_at"] or latest["started_at"])
+
+    with st.expander("Run a new scan", expanded=not scans):
+        subnet_prefix = st.text_input("Subnet prefix", value=settings.agent_subnet_prefix)
+        if role in {"admin", "analyst"}:
+            if st.button("Start Network Scan", type="primary"):
+                with st.spinner("Scanning network... this may take up to a minute."):
+                    response = api_request(
+                        "POST",
+                        "/api/network/scans",
+                        token,
+                        json={"subnet_prefix": subnet_prefix},
+                        timeout=120,
+                    )
+                if response.status_code == 200:
+                    result = response.json()
+                    st.success(
+                        f"Scan complete: {result['device_count']} active devices, "
+                        f"{result['unauthorized_count']} unauthorized."
+                    )
+                    st.rerun()
+                else:
+                    st.error("Network scan failed.")
+        else:
+            st.info("Only admins and analysts can start a network scan.")
+
+    devices = api_request("GET", "/api/network/devices", token).json()
+    if not devices:
+        st.info("No scan results yet. Run a network scan to discover active devices.")
+        return
+
+    df = pd.DataFrame(devices)
+    unauthorized = df[df["is_authorized"] == False]  # noqa: E712
+    authorized = df[df["is_authorized"] == True]  # noqa: E712
+
+    tab_all, tab_unauthorized, tab_authorized, tab_known = st.tabs(
+        ["All Devices", "Unauthorized", "Authorized", "Known Devices"]
+    )
+
+    with tab_all:
+        st.dataframe(df[["ip_address", "status", "open_ports", "discovered_at"]], use_container_width=True)
+
+    with tab_unauthorized:
+        if unauthorized.empty:
+            st.success("No unauthorized devices in the latest scan.")
+        else:
+            st.dataframe(unauthorized[["ip_address", "open_ports", "discovered_at"]], use_container_width=True)
+
+    with tab_authorized:
+        st.dataframe(authorized[["ip_address", "open_ports", "discovered_at"]], use_container_width=True)
+
+    with tab_known:
+        known_devices = api_request("GET", "/api/network/known-devices", token).json()
+        if known_devices:
+            st.dataframe(pd.DataFrame(known_devices), use_container_width=True)
+        else:
+            st.info("No authorized device list configured yet.")
+
+    if role == "admin" and not unauthorized.empty:
+        st.subheader("Authorize a device")
+        selected_ip = st.selectbox("Select unauthorized device", unauthorized["ip_address"].tolist())
+        label = st.text_input("Device label", value=f"Authorized device {selected_ip}")
+        if st.button("Mark as Authorized"):
+            response = api_request(
+                "POST",
+                "/api/network/known-devices",
+                token,
+                json={"ip_address": selected_ip, "label": label},
+            )
+            if response.status_code == 200:
+                st.success(f"{selected_ip} added to the authorized device list.")
+                st.rerun()
+            else:
+                st.error("Could not authorize device.")
 
 
 def render_traffic_logs(token: str) -> None:

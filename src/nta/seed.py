@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from nta.auth import hash_password
 from nta.database import Base, engine
 from nta.detection import ensure_default_rules
-from nta.models import Role, User, UserRole
+from nta.models import KnownDevice, Role, User, UserRole
 
 
 def init_database() -> None:
@@ -18,9 +18,26 @@ def seed_roles(db: Session) -> None:
     db.commit()
 
 
+DEFAULT_KNOWN_DEVICES = [
+    {"ip_address": "10.0.0.1", "label": "Gateway router"},
+    {"ip_address": "192.168.1.1", "label": "Local router"},
+    {"ip_address": "10.0.0.12", "label": "Staff workstation"},
+    {"ip_address": "10.0.0.18", "label": "Lab computer"},
+]
+
+
+def seed_known_devices(db: Session) -> None:
+    for device in DEFAULT_KNOWN_DEVICES:
+        existing = db.query(KnownDevice).filter(KnownDevice.ip_address == device["ip_address"]).first()
+        if existing is None:
+            db.add(KnownDevice(**device))
+    db.commit()
+
+
 def seed_admin(db: Session, username: str = "admin", password: str = "Admin@123", email: str = "admin@ulk.ac.rw") -> User:
     seed_roles(db)
     ensure_default_rules(db)
+    seed_known_devices(db)
 
     admin_role = db.query(Role).filter(Role.name == UserRole.ADMIN.value).one()
     existing = db.query(User).filter(User.username == username).first()

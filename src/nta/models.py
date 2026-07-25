@@ -121,3 +121,41 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User | None"] = relationship(back_populates="audit_logs")
+
+
+class KnownDevice(Base):
+    __tablename__ = "known_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ip_address: Mapped[str] = mapped_column(String(45), unique=True, nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class NetworkScan(Base):
+    __tablename__ = "network_scans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    subnet_prefix: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="running")
+    device_count: Mapped[int] = mapped_column(Integer, default=0)
+    unauthorized_count: Mapped[int] = mapped_column(Integer, default=0)
+    started_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    started_by: Mapped["User | None"] = relationship()
+    devices: Mapped[list["DiscoveredDevice"]] = relationship(back_populates="scan")
+
+
+class DiscoveredDevice(Base):
+    __tablename__ = "discovered_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scan_id: Mapped[int] = mapped_column(ForeignKey("network_scans.id"), nullable=False, index=True)
+    ip_address: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
+    open_ports: Mapped[str] = mapped_column(String(100), default="")
+    is_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    scan: Mapped["NetworkScan"] = relationship(back_populates="devices")

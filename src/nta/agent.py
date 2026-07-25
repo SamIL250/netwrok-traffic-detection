@@ -1,7 +1,6 @@
 import logging
 import random
 import signal
-import socket
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -150,19 +149,10 @@ class TrafficCaptureAgent:
         sniff(iface=interface, prn=handle_packet, store=False, count=packet_limit)
 
     def scan_local_hosts(self) -> list[str]:
-        active_hosts: list[str] = []
-        for host in range(1, 255):
-            ip = f"{self.config.subnet_prefix}{host}"
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.05)
-            try:
-                if sock.connect_ex((ip, 80)) == 0 or sock.connect_ex((ip, 443)) == 0:
-                    active_hosts.append(ip)
-            except OSError:
-                pass
-            finally:
-                sock.close()
-        return active_hosts
+        from nta.scanner import scan_subnet
+
+        results = scan_subnet(self.config.subnet_prefix)
+        return [result.ip_address for result in results]
 
     def _register_signal_handlers(self) -> None:
         def handle_shutdown(signum: int, _frame: object) -> None:
@@ -276,9 +266,32 @@ def trigger_detection(api_base_url: str, agent_api_key: str) -> int:
     return len(response.json())
 
 
-def scan_local_hosts(subnet_prefix: str = "192.168.1.") -> list[str]:
-    agent = TrafficCaptureAgent(AgentConfig(subnet_prefix=subnet_prefix))
-    hosts = agent.scan_local_hosts()
+def run_scan(api_base_url: str, subnet_prefix: str, agent_api_key: str) -> dict[str, object]:
+    response = requests.post(
+        f"{api_base_url.rstrip('/')}/api/internal/network/scans",
+        json={"subnet_prefix": subnet_prefix},
+        headers=agent_request_headers(agent_api_key),
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def scan_local_hosts(subnet_prefix: str = "192.168.1.", api_base_url: str | None = None, agent_api_key: str = "") -> list[str]:
+    if api_base_url and agent_api_key:
+        result = run_scan(api_base_url, subnet_prefix, agent_api_key)
+        logger.info(
+            "Scan saved to database: %s devices (%s unauthorized) on %s",
+            result["device_count"],
+            result["unauthorized_count"],
+            subnet_prefix,
+        )
+        return []
+
+    from nta.scanner import scan_subnet
+
+    results = scan_subnet(subnet_prefix)
+    hosts = [result.ip_address for result in results]
     logger.info("Discovered %s active hosts at %s", len(hosts), datetime.now(timezone.utc).isoformat())
     for host in hosts:
         logger.info(" - %s", host)

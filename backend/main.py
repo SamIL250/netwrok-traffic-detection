@@ -22,12 +22,25 @@ from nta.config import settings
 from nta.database import SessionLocal, get_db
 from nta.detection import apply_feedback
 from nta.detection_service import run_detection_job
-from nta.models import Anomaly, AnomalyFeedback, AnomalyStatus, Role, TrafficLog, User
+from nta.network_service import (
+    authorize_discovered_device,
+    list_discovered_devices,
+    list_known_devices,
+    list_scan_history,
+    remove_known_device,
+    run_network_scan,
+)
+from nta.models import Anomaly, AnomalyFeedback, AnomalyStatus, DiscoveredDevice, KnownDevice, NetworkScan, Role, TrafficLog, User
 from nta.password_strength import analyze_password_strength
 from nta.schemas import (
     AnomalyFeedbackRequest,
     AnomalyResponse,
     DashboardStats,
+    DiscoveredDeviceResponse,
+    KnownDeviceCreate,
+    KnownDeviceResponse,
+    NetworkScanRequest,
+    NetworkScanResponse,
     PasswordStrengthResponse,
     TokenResponse,
     TrafficLogCreate,
@@ -35,7 +48,7 @@ from nta.schemas import (
     UserCreateRequest,
     UserResponse,
 )
-from nta.seed import seed_admin
+from nta.seed import init_database, seed_admin
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +73,7 @@ def _run_scheduled_detection() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_database()
     db = next(get_db())
     try:
         seed_admin(db)
@@ -256,6 +270,126 @@ def review_anomaly(
     db.refresh(anomaly)
     log_audit(db, current_user.id, "review_anomaly", f"Anomaly {anomaly_id} marked {payload.classification}")
     return _anomaly_response(anomaly)
+
+
+@app.post("/api/network/scans", response_model=NetworkScanResponse)
+async def create_network_scan(
+    payload: NetworkScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> NetworkScanResponse:
+    scan = await asyncio.to_thread(run_network_scan, payload.subnet_prefix, current_user.id)
+    log_audit(
+        db,
+        current_user.id,
+        "network_scan",
+        f"Scan completed for {payload.subnet_prefix}: {scan.device_count} devices, {scan.unauthorized_count} unauthorized",
+    )
+    return _network_scan_response(scan)
+
+
+@app.get("/api/network/scans", response_model=list[NetworkScanResponse])
+def get_network_scans(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[NetworkScanResponse]:
+    scans = list_scan_history(db, limit=limit)
+    return [_network_scan_response(scan) for scan in scans]
+
+
+@app.get("/api/network/devices", response_model=list[DiscoveredDeviceResponse])
+def get_discovered_devices(
+    unauthorized_only: bool = False,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[DiscoveredDeviceResponse]:
+    devices = list_discovered_devices(db, unauthorized_only=unauthorized_only)
+    return [_discovered_device_response(device) for device in devices]
+
+
+@app.get("/api/network/known-devices", response_model=list[KnownDeviceResponse])
+def get_known_devices(db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> list[KnownDeviceResponse]:
+    devices = list_known_devices(db)
+    return [_known_device_response(device) for device in devices]
+
+
+@app.post("/api/network/known-devices", response_model=KnownDeviceResponse)
+def create_known_device(
+    payload: KnownDeviceCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> KnownDeviceResponse:
+    device = authorize_discovered_device(db, payload.ip_address, payload.label or payload.ip_address)
+    log_audit(db, current_user.id, "authorize_device", f"Authorized device {device.ip_address}")
+    return _known_device_response(device)
+
+
+@app.delete("/api/network/known-devices/{device_id}")
+def delete_known_device(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> dict[str, str]:
+    if not remove_known_device(db, device_id):
+        raise HTTPException(status_code=404, detail="Known device not found")
+    log_audit(db, current_user.id, "remove_known_device", f"Removed known device {device_id}")
+    return {"status": "deleted"}
+
+
+@app.post("/api/internal/network/scans", response_model=NetworkScanResponse)
+async def create_network_scan_internal(
+    payload: NetworkScanRequest,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_api_key),
+) -> NetworkScanResponse:
+    scan = await asyncio.to_thread(run_network_scan, payload.subnet_prefix, None)
+    return _network_scan_response(scan)
+
+
+def _network_scan_response(scan: NetworkScan) -> NetworkScanResponse:
+    started_at = scan.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    completed_at = scan.completed_at
+    if completed_at is not None and completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    return NetworkScanResponse(
+        id=scan.id,
+        subnet_prefix=scan.subnet_prefix,
+        status=scan.status,
+        device_count=scan.device_count,
+        unauthorized_count=scan.unauthorized_count,
+        started_at=started_at.isoformat(),
+        completed_at=completed_at.isoformat() if completed_at else None,
+    )
+
+
+def _discovered_device_response(device: DiscoveredDevice) -> DiscoveredDeviceResponse:
+    discovered_at = device.discovered_at
+    if discovered_at.tzinfo is None:
+        discovered_at = discovered_at.replace(tzinfo=timezone.utc)
+    return DiscoveredDeviceResponse(
+        id=device.id,
+        scan_id=device.scan_id,
+        ip_address=device.ip_address,
+        open_ports=device.open_ports,
+        is_authorized=device.is_authorized,
+        discovered_at=discovered_at.isoformat(),
+        status="authorized" if device.is_authorized else "unauthorized",
+    )
+
+
+def _known_device_response(device: KnownDevice) -> KnownDeviceResponse:
+    created_at = device.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return KnownDeviceResponse(
+        id=device.id,
+        ip_address=device.ip_address,
+        label=device.label,
+        created_at=created_at.isoformat(),
+    )
 
 
 def _traffic_log_response(log: TrafficLog) -> TrafficLogResponse:

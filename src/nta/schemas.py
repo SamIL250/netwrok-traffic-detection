@@ -82,3 +82,40 @@ class DashboardStats(BaseModel):
     unique_ips: int
     encrypted_ratio: float
     open_anomalies: int
+
+
+class NetworkScanRequest(BaseModel):
+    subnet_prefix: str = Field(default="192.168.1.", max_length=50)
+
+
+class KnownDeviceCreate(BaseModel):
+    ip_address: str
+    label: str = Field(default="", max_length=255)
+
+
+class KnownDeviceResponse(BaseModel):
+    id: int
+    ip_address: str
+    label: str
+    created_at: str
+
+
+class NetworkScanResponse(BaseModel):
+    id: int
+    subnet_prefix: str
+    status: str
+    device_count: int
+    unauthorized_count: int
+    started_at: str
+    completed_at: str | None
+
+
+class DiscoveredDeviceResponse(BaseModel):
+    id: int
+    scan_id: int
+    ip_address: str
+    open_ports: str
+    is_authorized: bool
+    discovered_at: str
+    status: str
+

@@ -8,6 +8,21 @@ import streamlit as st
 from change_password_page import render_change_password_screen
 from login_page import render_login_screen
 from navigation import NAV_PAGE_KEY, render_sidebar_nav
+from rbac import (
+    can_access_page,
+    can_authorize_devices,
+    can_export_traffic_logs,
+    can_generate_reports,
+    can_manage_signatures,
+    can_manage_users,
+    can_retry_alerts,
+    can_review_anomalies,
+    can_run_detection,
+    can_run_network_scan,
+    can_send_test_email,
+    can_view_audit_logs,
+    render_role_banner,
+)
 from session import clear_session, get_cookie_manager, get_stored_token, logout_session, persist_session
 from nta.config import settings
 
@@ -101,12 +116,18 @@ def main() -> None:
         render_change_password(token, forced=True)
         return
 
+    if not can_access_page(me["role"], page):
+        st.error("You do not have permission to access this page.")
+        st.stop()
+
+    render_role_banner(me["role"])
+
     if page == "Dashboard":
-        render_dashboard(token)
+        render_dashboard(token, me["role"])
     elif page == "Network Scan":
         render_network_scan(token, me["role"])
     elif page == "Traffic Logs":
-        render_traffic_logs(token)
+        render_traffic_logs(token, me["role"])
     elif page == "Anomalies":
         render_anomalies(token, me["role"])
     elif page == "Intrusion Analytics":
@@ -125,7 +146,7 @@ def main() -> None:
         render_password_checker(token)
 
 
-def render_dashboard(token: str) -> None:
+def render_dashboard(token: str, role: str) -> None:
     st.title("Monitoring Dashboard")
     stats = api_request("GET", "/api/dashboard/stats", token).json()
 
@@ -150,13 +171,16 @@ def render_dashboard(token: str) -> None:
         st.warning("No traffic logs yet. Run the agent in sample mode to generate data.")
 
     st.info("Anomaly detection runs automatically on a schedule and after each agent capture batch.")
-    if st.button("Run Detection Now (manual)"):
-        result = api_request("POST", "/api/detection/run", token)
-        if result.status_code == 200:
-            anomalies = result.json()
-            st.success(f"Detection complete. New anomalies: {len(anomalies)}")
-        else:
-            st.error("Detection failed")
+    if can_run_detection(role):
+        if st.button("Run Detection Now (manual)"):
+            result = api_request("POST", "/api/detection/run", token)
+            if result.status_code == 200:
+                anomalies = result.json()
+                st.success(f"Detection complete. New anomalies: {len(anomalies)}")
+            else:
+                st.error(format_api_error(result, "Detection failed."))
+    else:
+        st.caption("Manual detection is available to analysts and administrators.")
 
 
 def render_network_scan(token: str, role: str) -> None:
@@ -173,7 +197,7 @@ def render_network_scan(token: str, role: str) -> None:
 
     with st.expander("Run a new scan", expanded=not scans):
         subnet_prefix = st.text_input("Subnet prefix", value=settings.agent_subnet_prefix)
-        if role in {"admin", "analyst"}:
+        if can_run_network_scan(role):
             if st.button("Start Network Scan", type="primary"):
                 with st.spinner("Scanning network... this may take up to a minute."):
                     response = api_request(
@@ -193,7 +217,7 @@ def render_network_scan(token: str, role: str) -> None:
                 else:
                     st.error("Network scan failed.")
         else:
-            st.info("Only admins and analysts can start a network scan.")
+            st.info("Only analysts and administrators can start a network scan.")
 
     devices = api_request("GET", "/api/network/devices", token).json()
     if not devices:
@@ -227,7 +251,7 @@ def render_network_scan(token: str, role: str) -> None:
         else:
             st.info("No authorized device list configured yet.")
 
-    if role == "admin" and not unauthorized.empty:
+    if can_authorize_devices(role) and not unauthorized.empty:
         st.subheader("Authorize a device")
         selected_ip = st.selectbox("Select unauthorized device", unauthorized["ip_address"].tolist())
         label = st.text_input("Device label", value=f"Authorized device {selected_ip}")
@@ -258,9 +282,11 @@ def _log_traffic_log_export() -> None:
     )
 
 
-def render_traffic_logs(token: str) -> None:
+def render_traffic_logs(token: str, role: str) -> None:
     st.title("Traffic Logs")
-    st.caption("Filter logs by source IP and/or date range. CSV export uses the current filters.")
+    st.caption("Filter logs by source IP and/or date range.")
+    if can_export_traffic_logs(role):
+        st.caption("CSV export uses the current filters.")
 
     src_ip = st.text_input("Source IP (optional)")
     filter_by_date = st.checkbox("Filter by date range", value=False)
@@ -318,19 +344,22 @@ def render_traffic_logs(token: str) -> None:
     if end_date:
         file_name_parts.append(f"to-{end_date.isoformat()}")
     file_suffix = "_".join(file_name_parts) if file_name_parts else "all"
-    csv_buffer = io.StringIO()
-    df.to_csv(csv_buffer, index=False)
-    st.download_button(
-        "Download CSV",
-        csv_buffer.getvalue(),
-        file_name=f"traffic_logs_{file_suffix}.csv",
-        mime="text/csv",
-        on_click=_log_traffic_log_export,
-    )
+    if can_export_traffic_logs(role):
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        st.download_button(
+            "Download CSV",
+            csv_buffer.getvalue(),
+            file_name=f"traffic_logs_{file_suffix}.csv",
+            mime="text/csv",
+            on_click=_log_traffic_log_export,
+        )
+    else:
+        st.caption("CSV export is available to analysts and administrators.")
 
 
 def render_audit_logs(token: str, me: dict) -> None:
-    if me["role"] != "admin":
+    if not can_view_audit_logs(me["role"]):
         st.error("Only administrators can view audit logs.")
         return
 
@@ -531,8 +560,7 @@ def render_intrusion_analytics(token: str) -> None:
 def render_anomalies(token: str, role: str) -> None:
     st.title("Anomaly Alerts")
 
-    if role in {"admin", "analyst"}:
-        render_learned_signatures(token)
+    render_learned_signatures(token, role)
 
     anomalies = api_request("GET", "/api/anomalies", token).json()
 
@@ -540,12 +568,15 @@ def render_anomalies(token: str, role: str) -> None:
         st.info("No anomalies detected yet.")
         return
 
+    if not can_review_anomalies(role):
+        st.caption("Open anomalies are listed below in read-only mode.")
+
     for anomaly in anomalies:
         with st.expander(f"[{anomaly['severity'].upper()}] {anomaly['anomaly_type']} - {anomaly['source_ip']}"):
             st.write(anomaly["description"])
             st.caption(f"Status: {anomaly['status']} | Detected: {anomaly['detected_at']}")
 
-            if role in {"admin", "analyst"} and anomaly["status"] == "open":
+            if can_review_anomalies(role) and anomaly["status"] == "open":
                 notes = st.text_input("Review notes", key=f"notes-{anomaly['id']}")
                 confirm_col, reject_col = st.columns(2)
                 if confirm_col.button("Confirm Intrusion", key=f"confirm-{anomaly['id']}"):
@@ -572,9 +603,11 @@ def render_anomalies(token: str, role: str) -> None:
                         st.rerun()
                     else:
                         st.error(format_api_error(response, "Could not submit review."))
+            elif anomaly["status"] == "open" and not can_review_anomalies(role):
+                st.caption("Analyst or administrator access is required to review this anomaly.")
 
 
-def render_learned_signatures(token: str) -> None:
+def render_learned_signatures(token: str, role: str) -> None:
     st.subheader("Learned Intrusion Signatures")
     st.caption(
         "Confirming an anomaly teaches the system a reusable pattern. "
@@ -618,6 +651,11 @@ def render_learned_signatures(token: str) -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    if not can_manage_signatures(role):
+        st.caption("Signature management is read-only for viewers.")
+        st.divider()
+        return
 
     labels = [
         f"#{item['id']} — {item['anomaly_type']} ({item['pattern_summary']})"
@@ -708,7 +746,7 @@ def render_alert_management(token: str, role: str) -> None:
     col3.metric("Failed", failed_count)
     col4.metric("Retryable", sum(1 for item in alerts if item["can_retry"]))
 
-    if role == "admin":
+    if can_send_test_email(role):
         if st.button("Send Test Email", key="alert-send-test-email"):
             test_response = api_request("POST", "/api/alerts/test-email", token)
             if test_response.status_code == 200:
@@ -720,6 +758,9 @@ def render_alert_management(token: str, role: str) -> None:
                 st.rerun()
             else:
                 st.error("Could not send test email.")
+
+    if not can_send_test_email(role):
+        st.caption("Test email delivery is available to administrators.")
 
     if not alerts:
         st.info("No alerts found for the selected filters.")
@@ -808,7 +849,7 @@ def render_alert_management(token: str, role: str) -> None:
             else:
                 st.warning(format_api_error(history_response, "Could not load status history."))
 
-            if alert["can_retry"] and role in {"admin", "analyst"}:
+            if alert["can_retry"] and can_retry_alerts(role):
                 if st.button("Retry Failed Email", key=f"retry-alert-{alert['delivery_id']}"):
                     retry_response = api_request(
                         "POST",
@@ -824,10 +865,12 @@ def render_alert_management(token: str, role: str) -> None:
                         st.rerun()
                     else:
                         st.error(format_api_error(retry_response, "Could not retry email delivery."))
+            elif alert["can_retry"] and not can_retry_alerts(role):
+                st.caption("Retry is available to analysts and administrators.")
 
 
 def render_reports(token: str, me: dict) -> None:
-    if me["role"] != "admin":
+    if not can_generate_reports(me["role"]):
         st.error("Only administrators can generate PDF reports.")
         return
 
@@ -895,7 +938,7 @@ def render_change_password(token: str, *, forced: bool = False) -> None:
 
 
 def render_user_management(token: str, me: dict) -> None:
-    if me["role"] != "admin":
+    if not can_manage_users(me["role"]):
         st.error("Only administrators can manage users.")
         return
 

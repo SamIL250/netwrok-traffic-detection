@@ -1,5 +1,7 @@
 import streamlit as st
 
+from rbac import role_label
+
 NAV_PAGE_KEY = "nav_page"
 
 SIDEBAR_CSS = """
@@ -339,11 +341,23 @@ NAV_SECTIONS: list[dict[str, object]] = [
 DEFAULT_PAGE = "Dashboard"
 
 
+def _visible_items(section: dict[str, object], role: str) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for item in section["items"]:  # type: ignore[index]
+        allowed_roles = item.get("roles")
+        if allowed_roles and role not in allowed_roles:
+            continue
+        items.append(item)  # type: ignore[arg-type]
+    return items
+
+
 def _visible_sections(role: str) -> list[dict[str, object]]:
     sections: list[dict[str, object]] = []
     for section in NAV_SECTIONS:
         allowed_roles = section.get("roles")
         if allowed_roles and role not in allowed_roles:
+            continue
+        if not _visible_items(section, role):
             continue
         sections.append(section)
     return sections
@@ -352,7 +366,7 @@ def _visible_sections(role: str) -> list[dict[str, object]]:
 def _all_page_ids(role: str) -> list[str]:
     page_ids: list[str] = []
     for section in _visible_sections(role):
-        for item in section["items"]:  # type: ignore[index]
+        for item in _visible_items(section, role):
             page_ids.append(str(item["id"]))
     return page_ids
 
@@ -378,7 +392,7 @@ def render_sidebar_user(me: dict[str, str]) -> None:
         <div class="nav-user-card">
             <p class="nav-user-label">Signed in as</p>
             <p class="nav-user-name">{me["username"]}</p>
-            <span class="nav-user-role">{me["role"]}</span>
+            <span class="nav-user-role">{role_label(me["role"])}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -388,7 +402,7 @@ def render_sidebar_user(me: dict[str, str]) -> None:
 def _render_nav_links(me: dict[str, str], current_page: str) -> None:
     for section in _visible_sections(me["role"]):
         st.markdown(f'<p class="nav-section-label">{section["label"]}</p>', unsafe_allow_html=True)
-        for item in section["items"]:  # type: ignore[index]
+        for item in _visible_items(section, me["role"]):
             page_id = str(item["id"])
             is_active = current_page == page_id
             if st.button(

@@ -40,7 +40,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Password reset / change password flow** — especially replace default `admin` password safely
 - [ ] **Proper DB migrations** — Alembic instead of `create_all()` for schema changes
 - [x] **Logout / session handling** — token expiry exists, but no proper session revoke or blacklist
-- [ ] **RBAC in the UI** — hide or disable actions per role (viewer read-only, analyst can review, admin manages users)
+- [x] **RBAC in the UI** — hide or disable actions per role (viewer read-only, analyst can review, admin manages users)
 
 ---
 
@@ -86,7 +86,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Feature | Status |
 |---------|--------|
 | Secure login / logout | Partial (login, forced password change, server-side logout + revoke) |
-| Role-based access control | Partial (API yes, UI incomplete) |
+| Role-based access control | Done (API + dashboard UI) |
 | Real-time traffic capture | Partial (continuous daemon; live needs network permissions) |
 | Network traffic dashboard | Done (basic) |
 | Password strength analysis | Done |

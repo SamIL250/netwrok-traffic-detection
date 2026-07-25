@@ -19,6 +19,35 @@ def api_request(method: str, path: str, token: str | None = None, timeout: int =
     return requests.request(method, url, headers=headers, timeout=timeout, **kwargs)
 
 
+def format_api_error(response: requests.Response, fallback: str = "Request failed.") -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return fallback
+
+    detail = payload.get("detail")
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        messages: list[str] = []
+        for item in detail:
+            if not isinstance(item, dict):
+                continue
+            msg = item.get("msg")
+            if not isinstance(msg, str):
+                continue
+            loc = item.get("loc", [])
+            field = loc[-1] if loc else None
+            if isinstance(field, str):
+                label = field.replace("_", " ").strip().title()
+                messages.append(f"{label}: {msg}.")
+            else:
+                messages.append(f"{msg}.")
+        if messages:
+            return " ".join(messages)
+    return fallback
+
+
 def login(username: str, password: str) -> str | None:
     response = requests.post(
         f"{settings.api_base_url.rstrip('/')}/api/auth/login",
@@ -55,15 +84,6 @@ def main() -> None:
     get_cookie_manager()
     token = require_login()
 
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio(
-        "Go to",
-        ["Dashboard", "Network Scan", "Traffic Logs", "Anomalies", "Email Alerts", "Password Checker"],
-    )
-    if st.sidebar.button("Logout"):
-        clear_session()
-        st.rerun()
-
     me_response = api_request("GET", "/api/auth/me", token)
     if me_response.status_code == 401:
         clear_session()
@@ -73,6 +93,24 @@ def main() -> None:
         st.stop()
 
     me = me_response.json()
+
+    st.sidebar.title("Navigation")
+    pages = [
+        "Dashboard",
+        "Network Scan",
+        "Traffic Logs",
+        "Anomalies",
+        "Email Alerts",
+        "Password Checker",
+        "Change Password",
+    ]
+    if me["role"] == "admin":
+        pages.insert(-1, "User Management")
+    page = st.sidebar.radio("Go to", pages)
+    if st.sidebar.button("Logout"):
+        clear_session()
+        st.rerun()
+
     st.sidebar.success(f"Signed in as {me['username']} ({me['role']})")
 
     if page == "Dashboard":
@@ -85,6 +123,10 @@ def main() -> None:
         render_anomalies(token, me["role"])
     elif page == "Email Alerts":
         render_email_alerts(token, me["role"])
+    elif page == "User Management":
+        render_user_management(token, me)
+    elif page == "Change Password":
+        render_change_password(token)
     else:
         render_password_checker(token)
 
@@ -302,6 +344,172 @@ def render_email_alerts(token: str, role: str) -> None:
         df[["created_at", "status", "recipient", "subject", "error_detail", "anomaly_id"]],
         use_container_width=True,
     )
+
+
+def render_change_password(token: str) -> None:
+    st.title("Change Password")
+    st.caption("Update your account password. Use a strong password with mixed characters.")
+
+    current_password = st.text_input("Current password", type="password")
+    new_password = st.text_input("New password", type="password")
+    confirm_password = st.text_input("Confirm new password", type="password")
+
+    if new_password:
+        strength = api_request("POST", "/api/password/strength", token, params={"password": new_password}).json()
+        st.metric("New password strength", strength["level"].title())
+        st.caption(strength["message"])
+
+    if st.button("Update Password", type="primary"):
+        if not current_password or not new_password:
+            st.error("Enter your current and new passwords.")
+        elif new_password != confirm_password:
+            st.error("New passwords do not match.")
+        else:
+            response = api_request(
+                "POST",
+                "/api/auth/change-password",
+                token,
+                json={"current_password": current_password, "new_password": new_password},
+            )
+            if response.status_code == 200:
+                st.success("Password updated successfully.")
+            else:
+                st.error(format_api_error(response, "Could not update password."))
+
+
+def render_user_management(token: str, me: dict) -> None:
+    if me["role"] != "admin":
+        st.error("Only administrators can manage users.")
+        return
+
+    st.title("User Management")
+    st.caption("Create accounts, assign roles, disable users, and reset passwords.")
+
+    with st.expander("Create new user", expanded=False):
+        username = st.text_input("Username", key="new-user-username")
+        email = st.text_input("Email", key="new-user-email")
+        password = st.text_input("Initial password", type="password", key="new-user-password")
+        role_name = st.selectbox("Role", ["viewer", "analyst", "admin"], key="new-user-role")
+
+        if password:
+            strength = api_request("POST", "/api/password/strength", token, params={"password": password}).json()
+            st.caption(f"Password strength: {strength['level']} — {strength['message']}")
+
+        if st.button("Create User", type="primary", key="create-user-btn"):
+            if not username or not email or not password:
+                st.error("Username, email, and password are required.")
+            else:
+                response = api_request(
+                    "POST",
+                    "/api/users",
+                    token,
+                    json={
+                        "username": username,
+                        "email": email,
+                        "password": password,
+                        "role_name": role_name,
+                    },
+                )
+                if response.status_code == 200:
+                    st.success(f"User '{username}' created.")
+                    st.rerun()
+                else:
+                    st.error(format_api_error(response, "Could not create user."))
+
+    response = api_request("GET", "/api/users", token)
+    if response.status_code != 200:
+        st.error("Could not load users.")
+        return
+
+    users = response.json()
+    if not users:
+        st.info("No users found.")
+        return
+
+    df = pd.DataFrame(users)
+    df["status"] = df["is_active"].map({True: "Active", False: "Disabled"})
+    st.dataframe(
+        df[["username", "email", "role", "status", "created_at"]],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Manage user")
+    role_order = ["admin", "analyst", "viewer"]
+    user_labels = [
+        f"{user['username']} ({user['role']}){' — disabled' if not user['is_active'] else ''}"
+        for user in users
+    ]
+    selected_index = st.selectbox("Select user", range(len(users)), format_func=lambda i: user_labels[i])
+    selected_user = users[selected_index]
+    is_self = selected_user["id"] == me["id"]
+
+    col1, col2 = st.columns(2)
+    with col1:
+        role_index = role_order.index(selected_user["role"]) if selected_user["role"] in role_order else 0
+        new_role = st.selectbox(
+            "Role",
+            role_order,
+            index=role_index,
+            disabled=is_self,
+            key=f"role-{selected_user['id']}",
+        )
+    with col2:
+        account_enabled = st.checkbox(
+            "Account enabled",
+            value=selected_user["is_active"],
+            disabled=is_self,
+            key=f"active-{selected_user['id']}",
+        )
+
+    if is_self:
+        st.info("You cannot change your own role or disable your own account.")
+
+    role_changed = new_role != selected_user["role"]
+    status_changed = account_enabled != selected_user["is_active"]
+
+    if st.button("Save account changes", key=f"save-user-{selected_user['id']}"):
+        if not role_changed and not status_changed:
+            st.warning("No changes to save.")
+        else:
+            payload: dict[str, object] = {}
+            if role_changed:
+                payload["role_name"] = new_role
+            if status_changed:
+                payload["is_active"] = account_enabled
+
+            update_response = api_request("PATCH", f"/api/users/{selected_user['id']}", token, json=payload)
+            if update_response.status_code == 200:
+                st.success(f"Updated account for {selected_user['username']}.")
+                st.rerun()
+            else:
+                st.error(format_api_error(update_response, "Could not update user."))
+
+    st.subheader("Force password reset")
+    st.caption("Set a new password for this user. Share it securely; they should change it after signing in.")
+    reset_password = st.text_input("New password", type="password", key=f"reset-pw-{selected_user['id']}")
+    reset_confirm = st.text_input("Confirm new password", type="password", key=f"reset-pw-confirm-{selected_user['id']}")
+
+    if reset_password:
+        strength = api_request("POST", "/api/password/strength", token, params={"password": reset_password}).json()
+        st.caption(f"Password strength: {strength['level']} — {strength['message']}")
+
+    if st.button("Reset Password", key=f"reset-btn-{selected_user['id']}"):
+        if not reset_password:
+            st.error("Enter a new password.")
+        elif reset_password != reset_confirm:
+            st.error("Passwords do not match.")
+        else:
+            reset_response = api_request(
+                "POST",
+                f"/api/users/{selected_user['id']}/reset-password",
+                token,
+                json={"new_password": reset_password},
+            )
+            if reset_response.status_code == 200:
+                st.success(f"Password reset for {selected_user['username']}.")
+            else:
+                st.error(format_api_error(reset_response, "Could not reset password."))
 
 
 def render_password_checker(token: str) -> None:

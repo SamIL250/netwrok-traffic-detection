@@ -27,6 +27,29 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserDetailResponse(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+    role: str
+    is_active: bool
+    created_at: str
+
+
+class UserUpdateRequest(BaseModel):
+    role_name: str | None = None
+    is_active: bool | None = None
+
+
+class AdminPasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=8)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class PasswordStrengthResponse(BaseModel):
     score: int
     level: str

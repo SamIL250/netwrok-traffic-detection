@@ -25,7 +25,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Secure the traffic agent** — `/api/traffic/logs` requires `X-Agent-Api-Key` header
 - [x] **Network scanner in the dashboard** — scan active/unauthorized devices, save results to DB, authorize devices
 - [x] **Email alerts end-to-end** — SMTP configured, test delivery, alert status in dashboard
-- [ ] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)
+- [x] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)
 - [ ] **Traffic log filters** — add date range filtering (PDF mentions date + IP; currently IP only)
 - [ ] **Audit log page** — who logged in, reviewed anomalies, exported data (data is stored, no UI)
 
@@ -96,7 +96,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Network device scan | Done (dashboard + DB + CLI via agent) |
 | Retraining / feedback model | Partial (threshold only) |
 | PDF reporting | Not started |
-| User management | Partial (API only) |
+| User management | Done (API + dashboard) |
 
 ---
 

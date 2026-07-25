@@ -18,6 +18,7 @@ from nta.auth import (
     log_audit,
     require_roles,
     verify_agent_api_key,
+    verify_password,
 )
 from nta.config import settings
 from nta.database import SessionLocal, get_db
@@ -47,8 +48,12 @@ from nta.schemas import (
     TokenResponse,
     TrafficLogCreate,
     TrafficLogResponse,
+    AdminPasswordResetRequest,
+    PasswordChangeRequest,
     UserCreateRequest,
+    UserDetailResponse,
     UserResponse,
+    UserUpdateRequest,
 )
 from nta.seed import init_database, seed_admin
 
@@ -136,6 +141,45 @@ def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     )
 
 
+def _user_to_detail(user: User) -> UserDetailResponse:
+    return UserDetailResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role.name,
+        is_active=user.is_active,
+        created_at=user.created_at.isoformat() if user.created_at else "",
+    )
+
+
+@app.post("/api/auth/change-password")
+def change_password(
+    payload: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    strength = analyze_password_strength(payload.new_password)
+    if strength["level"] == "weak":
+        raise HTTPException(status_code=400, detail="Password is too weak")
+
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    log_audit(db, current_user.id, "change_password", f"User {current_user.username} changed password")
+    return {"detail": "Password updated"}
+
+
+@app.get("/api/users", response_model=list[UserDetailResponse])
+def list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> list[UserDetailResponse]:
+    users = db.query(User).order_by(User.username).all()
+    return [_user_to_detail(user) for user in users]
+
+
 @app.post("/api/users", response_model=UserResponse)
 def create_user(
     payload: UserCreateRequest,
@@ -164,6 +208,65 @@ def create_user(
     db.refresh(user)
     log_audit(db, current_user.id, "create_user", f"Created user {user.username}")
     return UserResponse(id=user.id, username=user.username, email=user.email, role=role.name)
+
+
+@app.patch("/api/users/{user_id}", response_model=UserDetailResponse)
+def update_user(
+    user_id: int,
+    payload: UserUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> UserDetailResponse:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if payload.role_name is None and payload.is_active is None:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    if user.id == current_user.id:
+        if payload.is_active is False:
+            raise HTTPException(status_code=400, detail="Cannot disable your own account")
+        if payload.role_name is not None and payload.role_name != current_user.role.name:
+            raise HTTPException(status_code=400, detail="Cannot change your own role")
+
+    changes: list[str] = []
+    if payload.role_name is not None:
+        role = db.query(Role).filter(Role.name == payload.role_name).first()
+        if role is None:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        user.role_id = role.id
+        changes.append(f"role={payload.role_name}")
+
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+        changes.append(f"is_active={payload.is_active}")
+
+    db.commit()
+    db.refresh(user)
+    log_audit(db, current_user.id, "update_user", f"Updated user {user.username}: {', '.join(changes)}")
+    return _user_to_detail(user)
+
+
+@app.post("/api/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    payload: AdminPasswordResetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> dict[str, str]:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    strength = analyze_password_strength(payload.new_password)
+    if strength["level"] == "weak":
+        raise HTTPException(status_code=400, detail="Password is too weak")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    log_audit(db, current_user.id, "reset_password", f"Reset password for user {user.username}")
+    return {"detail": "Password reset"}
 
 
 @app.post("/api/password/strength", response_model=PasswordStrengthResponse)

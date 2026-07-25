@@ -5,6 +5,8 @@ import plotly.express as px
 import requests
 import streamlit as st
 
+from login_page import render_login_screen
+from navigation import NAV_PAGE_KEY, render_sidebar_nav
 from session import clear_session, get_cookie_manager, get_stored_token, persist_session
 from nta.config import settings
 
@@ -64,19 +66,11 @@ def require_login() -> str:
     if token:
         return token
 
-    st.title("Network Traffic Monitoring System")
-    st.subheader("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    token = render_login_screen(login)
+    if token:
+        persist_session(token)
+        st.rerun()
 
-    if st.button("Sign in", type="primary"):
-        token = login(username, password)
-        if token:
-            persist_session(token)
-            st.rerun()
-        st.error("Invalid username or password")
-
-    st.info("Default admin: admin / Admin@123 (change after first login)")
     st.stop()
 
 
@@ -94,26 +88,12 @@ def main() -> None:
 
     me = me_response.json()
 
-    st.sidebar.title("Navigation")
-    pages = [
-        "Dashboard",
-        "Network Scan",
-        "Traffic Logs",
-        "Anomalies",
-        "Email Alerts",
-        "Password Checker",
-        "Change Password",
-    ]
-    if me["role"] == "admin":
-        pages.insert(-1, "User Management")
-        pages.insert(-1, "Audit Log")
-        pages.insert(-1, "Reports")
-    page = st.sidebar.radio("Go to", pages)
-    if st.sidebar.button("Logout"):
+    with st.sidebar:
+        page = render_sidebar_nav(me)
+    if page == "__logout__":
         clear_session()
+        st.session_state.pop(NAV_PAGE_KEY, None)
         st.rerun()
-
-    st.sidebar.success(f"Signed in as {me['username']} ({me['role']})")
 
     if page == "Dashboard":
         render_dashboard(token)

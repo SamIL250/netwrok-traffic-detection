@@ -26,7 +26,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Network scanner in the dashboard** — scan active/unauthorized devices, save results to DB, authorize devices
 - [x] **Email alerts end-to-end** — SMTP configured, test delivery, alert status in dashboard
 - [x] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)
-- [ ] **Traffic log filters** — add date range filtering (PDF mentions date + IP; currently IP only)
+- [x] **Traffic log filters** — add date range filtering (PDF mentions date + IP; currently IP only)
 - [ ] **Audit log page** — who logged in, reviewed anomalies, exported data (data is stored, no UI)
 
 ---
@@ -92,7 +92,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Password strength analysis | Done |
 | Anomaly alert generation | Partial (automatic + manual trigger) |
 | Email alerts | Done (SMTP + dashboard) |
-| Traffic logs (filter + export) | Partial (IP filter + CSV) |
+| Traffic logs (filter + export) | Done (IP + date range + CSV) |
 | Network device scan | Done (dashboard + DB + CLI via agent) |
 | Retraining / feedback model | Partial (threshold only) |
 | PDF reporting | Not started |

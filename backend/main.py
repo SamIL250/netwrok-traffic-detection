@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -291,13 +291,24 @@ def create_traffic_log(
 @app.get("/api/traffic/logs", response_model=list[TrafficLogResponse])
 def list_traffic_logs(
     src_ip: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
     limit: int = 100,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> list[TrafficLogResponse]:
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
     query = db.query(TrafficLog).order_by(TrafficLog.captured_at.desc())
     if src_ip:
         query = query.filter(TrafficLog.src_ip == src_ip)
+    if start_date:
+        start_dt = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+        query = query.filter(TrafficLog.captured_at >= start_dt)
+    if end_date:
+        end_dt = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        query = query.filter(TrafficLog.captured_at < end_dt)
     logs = query.limit(limit).all()
     return [_traffic_log_response(log) for log in logs]
 

@@ -253,22 +253,62 @@ def render_network_scan(token: str, role: str) -> None:
 
 def render_traffic_logs(token: str) -> None:
     st.title("Traffic Logs")
-    src_ip = st.text_input("Filter by source IP (optional)")
-    params = {"limit": 200}
-    if src_ip:
-        params["src_ip"] = src_ip
+    st.caption("Filter logs by source IP and/or date range. CSV export uses the current filters.")
 
-    logs = api_request("GET", "/api/traffic/logs", token, params=params).json()
+    src_ip = st.text_input("Source IP (optional)")
+    filter_by_date = st.checkbox("Filter by date range", value=False)
+
+    start_date = None
+    end_date = None
+    if filter_by_date:
+        col_from, col_to = st.columns(2)
+        with col_from:
+            start_date = st.date_input("From date", key="traffic-start-date")
+        with col_to:
+            end_date = st.date_input("To date", key="traffic-end-date")
+
+    params: dict[str, object] = {"limit": 200}
+    if src_ip:
+        params["src_ip"] = src_ip.strip()
+    if start_date:
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        params["end_date"] = end_date.isoformat()
+
+    if start_date and end_date and start_date > end_date:
+        st.error("From date must be on or before to date.")
+        return
+
+    response = api_request("GET", "/api/traffic/logs", token, params=params)
+    if response.status_code != 200:
+        st.error(format_api_error(response, "Could not load traffic logs."))
+        return
+
+    logs = response.json()
     if not logs:
-        st.info("No logs found.")
+        st.info("No logs found for the selected filters.")
         return
 
     df = pd.DataFrame(logs)
+    st.caption(f"Showing {len(df)} log entries")
     st.dataframe(df, use_container_width=True)
 
+    filter_parts: list[str] = []
+    if src_ip:
+        filter_parts.append(f"ip-{src_ip.strip()}")
+    if start_date:
+        filter_parts.append(f"from-{start_date.isoformat()}")
+    if end_date:
+        filter_parts.append(f"to-{end_date.isoformat()}")
+    file_suffix = "_".join(filter_parts) if filter_parts else "all"
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
-    st.download_button("Download CSV", csv_buffer.getvalue(), file_name="traffic_logs.csv", mime="text/csv")
+    st.download_button(
+        "Download CSV",
+        csv_buffer.getvalue(),
+        file_name=f"traffic_logs_{file_suffix}.csv",
+        mime="text/csv",
+    )
 
 
 def render_anomalies(token: str, role: str) -> None:

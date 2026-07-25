@@ -20,10 +20,10 @@ from nta.alert_service import (
 from nta.analytics_service import get_intrusion_analytics
 from nta.auth import (
     authenticate_user,
-    create_access_token,
     get_current_user,
     hash_password,
     log_audit,
+    oauth2_scheme,
     require_roles,
     verify_agent_api_key,
     verify_password,
@@ -72,7 +72,8 @@ from nta.schemas import (
     UserResponse,
     UserUpdateRequest,
 )
-from nta.seed import ensure_default_admin_password_flag, init_database, migrate_schema, seed_admin
+from nta.seed import ensure_default_admin_password_flag, init_database, migrate_schema, purge_expired_sessions, seed_admin
+from nta.session_service import create_access_token, invalidate_user_sessions, revoke_token_from_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ async def lifespan(app: FastAPI):
         migrate_schema(db)
         seed_admin(db)
         ensure_default_admin_password_flag(db)
+        purge_expired_sessions(db)
     finally:
         db.close()
 
@@ -148,9 +150,30 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     log_audit(db, user.id, "login", f"User {user.username} logged in")
     return TokenResponse(
-        access_token=create_access_token(user.username),
+        access_token=create_access_token(user),
         must_change_password=user.must_change_password,
     )
+
+
+@app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    revoke_token_from_access_token(db, token, reason="logout")
+    log_audit(db, current_user.id, "logout", f"User {current_user.username} signed out")
+
+
+@app.post("/api/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+def logout_all_sessions(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    revoke_token_from_access_token(db, token, reason="logout_all")
+    invalidate_user_sessions(db, current_user)
+    log_audit(db, current_user.id, "logout_all", f"User {current_user.username} revoked all sessions")
 
 
 @app.get("/api/auth/me", response_model=UserResponse)
@@ -179,6 +202,7 @@ def _user_to_detail(user: User) -> UserDetailResponse:
 @app.post("/api/auth/change-password")
 def change_password(
     payload: PasswordChangeRequest,
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
@@ -196,7 +220,8 @@ def change_password(
 
     current_user.password_hash = hash_password(payload.new_password)
     current_user.must_change_password = False
-    db.commit()
+    revoke_token_from_access_token(db, token, reason="password_change")
+    invalidate_user_sessions(db, current_user)
     log_audit(db, current_user.id, "change_password", f"User {current_user.username} changed password")
     return {"detail": "Password updated"}
 
@@ -279,6 +304,8 @@ def update_user(
     if payload.is_active is not None:
         user.is_active = payload.is_active
         changes.append(f"is_active={payload.is_active}")
+        if payload.is_active is False:
+            invalidate_user_sessions(db, user)
 
     db.commit()
     db.refresh(user)
@@ -304,7 +331,7 @@ def reset_user_password(
 
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = payload.require_password_change
-    db.commit()
+    invalidate_user_sessions(db, user)
     log_audit(
         db,
         current_user.id,
@@ -312,6 +339,25 @@ def reset_user_password(
         f"Reset password for user {user.username} (require_change={payload.require_password_change})",
     )
     return {"detail": "Password reset"}
+
+
+@app.post("/api/users/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_user_sessions(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> None:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    invalidate_user_sessions(db, user)
+    log_audit(
+        db,
+        current_user.id,
+        "revoke_user_sessions",
+        f"Revoked all sessions for user {user.username}",
+    )
 
 
 @app.post("/api/password/strength", response_model=PasswordStrengthResponse)

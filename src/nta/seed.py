@@ -23,6 +23,17 @@ def migrate_schema(db: Session) -> None:
             text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
         )
         db.commit()
+        columns.add("must_change_password")
+
+    if "token_version" not in columns:
+        db.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1"))
+        db.commit()
+
+
+def purge_expired_sessions(db: Session) -> None:
+    from nta.session_service import purge_expired_revoked_tokens
+
+    purge_expired_revoked_tokens(db)
 
 
 def ensure_default_admin_password_flag(db: Session) -> None:

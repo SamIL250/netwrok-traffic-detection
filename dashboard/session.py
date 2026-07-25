@@ -75,3 +75,19 @@ def clear_session() -> None:
     st.session_state.token = None
     st.session_state.pop("_cookie_load_attempts", None)
     get_cookie_manager().delete(AUTH_COOKIE_NAME, key="delete_auth_token")
+
+
+def logout_session(token: str | None) -> None:
+    if token:
+        import requests
+
+        try:
+            requests.post(
+                f"{settings.api_base_url.rstrip('/')}/api/auth/logout",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=20,
+            )
+        except requests.RequestException:
+            pass
+
+    clear_session()

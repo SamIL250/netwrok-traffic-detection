@@ -8,7 +8,7 @@ import streamlit as st
 from change_password_page import render_change_password_screen
 from login_page import render_login_screen
 from navigation import NAV_PAGE_KEY, render_sidebar_nav
-from session import clear_session, get_cookie_manager, get_stored_token, persist_session
+from session import clear_session, get_cookie_manager, get_stored_token, logout_session, persist_session
 from nta.config import settings
 
 st.set_page_config(page_title="Network Traffic Monitor", layout="wide")
@@ -93,7 +93,7 @@ def main() -> None:
     with st.sidebar:
         page = render_sidebar_nav(me, force_password_change=force_password_change)
     if page == "__logout__":
-        clear_session()
+        logout_session(token)
         st.session_state.pop(NAV_PAGE_KEY, None)
         st.rerun()
 
@@ -1043,9 +1043,18 @@ def render_user_management(token: str, me: dict) -> None:
                 },
             )
             if reset_response.status_code == 200:
-                st.success(f"Password reset for {selected_user['username']}.")
+                st.success(f"Password reset for {selected_user['username']}. All active sessions were revoked.")
             else:
                 st.error(format_api_error(reset_response, "Could not reset password."))
+
+    st.subheader("Revoke sessions")
+    st.caption("Sign this user out of every device immediately. They will need to sign in again.")
+    if st.button("Revoke all sessions", key=f"revoke-sessions-{selected_user['id']}"):
+        revoke_response = api_request("POST", f"/api/users/{selected_user['id']}/revoke-sessions", token)
+        if revoke_response.status_code == 204:
+            st.success(f"All sessions revoked for {selected_user['username']}.")
+        else:
+            st.error(format_api_error(revoke_response, "Could not revoke sessions."))
 
 
 def render_password_checker(token: str) -> None:

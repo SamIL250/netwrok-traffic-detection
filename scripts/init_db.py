@@ -1,5 +1,5 @@
 from nta.database import SessionLocal
-from nta.seed import ensure_default_admin_password_flag, init_database, migrate_schema, seed_admin
+from nta.seed import ensure_default_admin_password_flag, init_database, migrate_schema, purge_expired_sessions, seed_admin
 
 
 def main() -> None:
@@ -10,6 +10,7 @@ def main() -> None:
         migrate_schema(db)
         admin = seed_admin(db)
         ensure_default_admin_password_flag(db)
+        purge_expired_sessions(db)
         print("Database ready.")
         print(f"Admin user: {admin.username}")
         print("Default password: Admin@123 (must be changed on first login)")

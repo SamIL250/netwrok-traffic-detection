@@ -107,6 +107,7 @@ def main() -> None:
     if me["role"] == "admin":
         pages.insert(-1, "User Management")
         pages.insert(-1, "Audit Log")
+        pages.insert(-1, "Reports")
     page = st.sidebar.radio("Go to", pages)
     if st.sidebar.button("Logout"):
         clear_session()
@@ -128,6 +129,8 @@ def main() -> None:
         render_user_management(token, me)
     elif page == "Audit Log":
         render_audit_logs(token, me)
+    elif page == "Reports":
+        render_reports(token, me)
     elif page == "Change Password":
         render_change_password(token)
     else:
@@ -486,6 +489,65 @@ def render_email_alerts(token: str, role: str) -> None:
         df[["created_at", "status", "recipient", "subject", "error_detail", "anomaly_id"]],
         use_container_width=True,
     )
+
+
+def render_reports(token: str, me: dict) -> None:
+    if me["role"] != "admin":
+        st.error("Only administrators can generate PDF reports.")
+        return
+
+    st.title("PDF Reports")
+    st.caption("Generate a downloadable monitoring report for ICT staff and academic deliverables.")
+
+    filter_by_date = st.checkbox("Limit report to a date range", value=False)
+    start_date = None
+    end_date = None
+    if filter_by_date:
+        col_from, col_to = st.columns(2)
+        with col_from:
+            start_date = st.date_input("From date", key="report-start-date")
+        with col_to:
+            end_date = st.date_input("To date", key="report-end-date")
+
+    st.markdown(
+        "The report includes an executive summary, anomaly breakdown, recent anomalies, "
+        "traffic summary, latest network scan results, and email alert counts."
+    )
+
+    if start_date and end_date and start_date > end_date:
+        st.error("From date must be on or before to date.")
+        return
+
+    if st.button("Generate PDF Report", type="primary"):
+        params: dict[str, object] = {}
+        if start_date:
+            params["start_date"] = start_date.isoformat()
+        if end_date:
+            params["end_date"] = end_date.isoformat()
+
+        with st.spinner("Generating report..."):
+            response = api_request("GET", "/api/reports/pdf", token, params=params, timeout=60)
+
+        if response.status_code != 200:
+            st.error(format_api_error(response, "Could not generate PDF report."))
+            return
+
+        if start_date and end_date:
+            file_suffix = f"{start_date.isoformat()}_to_{end_date.isoformat()}"
+        elif start_date:
+            file_suffix = f"from_{start_date.isoformat()}"
+        elif end_date:
+            file_suffix = f"to_{end_date.isoformat()}"
+        else:
+            file_suffix = "all_data"
+
+        st.success("Report generated successfully.")
+        st.download_button(
+            "Download PDF Report",
+            data=response.content,
+            file_name=f"network_report_{file_suffix}.pdf",
+            mime="application/pdf",
+        )
 
 
 def render_change_password(token: str) -> None:

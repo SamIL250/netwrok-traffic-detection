@@ -33,7 +33,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 
 ## Medium Priority (Match the PDF Better)
 
-- [ ] **PDF report export** — generate downloadable reports for admins
+- [x] **PDF report export** — generate downloadable reports for admins
 - [ ] **Stronger retraining model** — today only threshold tweaks; add signature/rule learning from confirmed intrusions
 - [ ] **Intrusion analytics charts** — breakdown by type (brute force, port scan, unencrypted), trends over time
 - [ ] **Alert management module** — list alerts, severity, status history, retry failed email
@@ -95,7 +95,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Traffic logs (filter + export) | Done (IP + date range + CSV) |
 | Network device scan | Done (dashboard + DB + CLI via agent) |
 | Retraining / feedback model | Partial (threshold only) |
-| PDF reporting | Not started |
+| PDF reporting | Done (admin dashboard + API) |
 | User management | Done (API + dashboard) |
 
 ---

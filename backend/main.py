@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -34,6 +35,7 @@ from nta.network_service import (
 )
 from nta.models import AlertDelivery, Anomaly, AnomalyFeedback, AnomalyStatus, AuditLog, DiscoveredDevice, KnownDevice, NetworkScan, Role, TrafficLog, User
 from nta.password_strength import analyze_password_strength
+from nta.report_service import format_report_period, generate_network_report_pdf
 from nta.schemas import (
     AlertDeliveryResponse,
     AnomalyFeedbackRequest,
@@ -463,6 +465,28 @@ def record_client_audit_event(
     action = f"export_{payload.resource}"
     details = payload.details.strip() or f"User {current_user.username} exported {payload.resource.replace('_', ' ')}"
     log_audit(db, current_user.id, action, details)
+
+
+@app.get("/api/reports/pdf")
+def download_pdf_report(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> Response:
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
+    pdf_bytes = generate_network_report_pdf(db, current_user, start_date, end_date)
+    period = format_report_period(start_date, end_date)
+    log_audit(db, current_user.id, "export_pdf_report", f"Generated PDF report ({period})")
+
+    filename = f"network_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/api/network/scans", response_model=NetworkScanResponse)

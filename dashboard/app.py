@@ -5,6 +5,7 @@ import plotly.express as px
 import requests
 import streamlit as st
 
+from session import clear_session, get_cookie_manager, get_stored_token, persist_session
 from nta.config import settings
 
 st.set_page_config(page_title="Network Traffic Monitor", layout="wide")
@@ -30,11 +31,9 @@ def login(username: str, password: str) -> str | None:
 
 
 def require_login() -> str:
-    if "token" not in st.session_state:
-        st.session_state.token = None
-
-    if st.session_state.token:
-        return st.session_state.token
+    token = get_stored_token()
+    if token:
+        return token
 
     st.title("Network Traffic Monitoring System")
     st.subheader("Login")
@@ -44,7 +43,7 @@ def require_login() -> str:
     if st.button("Sign in", type="primary"):
         token = login(username, password)
         if token:
-            st.session_state.token = token
+            persist_session(token)
             st.rerun()
         st.error("Invalid username or password")
 
@@ -53,15 +52,24 @@ def require_login() -> str:
 
 
 def main() -> None:
+    get_cookie_manager()
     token = require_login()
 
     st.sidebar.title("Navigation")
     page = st.sidebar.radio("Go to", ["Dashboard", "Network Scan", "Traffic Logs", "Anomalies", "Password Checker"])
     if st.sidebar.button("Logout"):
-        st.session_state.token = None
+        clear_session()
         st.rerun()
 
-    me = api_request("GET", "/api/auth/me", token).json()
+    me_response = api_request("GET", "/api/auth/me", token)
+    if me_response.status_code == 401:
+        clear_session()
+        st.rerun()
+    if me_response.status_code != 200:
+        st.error("Could not verify your session. Check that the API is running.")
+        st.stop()
+
+    me = me_response.json()
     st.sidebar.success(f"Signed in as {me['username']} ({me['role']})")
 
     if page == "Dashboard":

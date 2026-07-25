@@ -1,14 +1,19 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from nta.auth import authenticate_user, create_access_token, get_current_user, hash_password, log_audit, require_roles
-from nta.database import get_db
-from nta.detection import analyze_recent_traffic, apply_feedback
+from nta.config import settings
+from nta.database import SessionLocal, get_db
+from nta.detection import apply_feedback
+from nta.detection_service import run_detection_job
 from nta.models import Anomaly, AnomalyFeedback, AnomalyStatus, Role, TrafficLog, User
 from nta.password_strength import analyze_password_strength
 from nta.schemas import (
@@ -25,7 +30,55 @@ from nta.schemas import (
 from nta.seed import seed_admin
 from nta.sms import send_sms_alert
 
-app = FastAPI(title="Network Traffic Monitoring API", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+
+async def _scheduled_detection_loop() -> None:
+    while True:
+        await asyncio.sleep(settings.detection_interval_seconds)
+        if not settings.detection_auto_enabled:
+            continue
+        await asyncio.to_thread(_run_scheduled_detection)
+
+
+def _run_scheduled_detection() -> None:
+    db = SessionLocal()
+    try:
+        run_detection_job(db, source="scheduled")
+    except Exception as exc:
+        logger.exception("Scheduled detection failed: %s", exc)
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db = next(get_db())
+    try:
+        seed_admin(db)
+    finally:
+        db.close()
+
+    detection_task = None
+    if settings.detection_auto_enabled:
+        detection_task = asyncio.create_task(_scheduled_detection_loop())
+        logger.info(
+            "Automatic detection enabled (every %ss, window=%sm)",
+            settings.detection_interval_seconds,
+            settings.detection_window_minutes,
+        )
+
+    yield
+
+    if detection_task is not None:
+        detection_task.cancel()
+        try:
+            await detection_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Network Traffic Monitoring API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +87,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def verify_internal_api_key(x_internal_api_key: str | None = Header(default=None)) -> None:
+    if not settings.internal_api_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Internal API key not configured")
+    if x_internal_api_key != settings.internal_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal API key")
 
 
 @app.get("/health")
@@ -137,15 +197,20 @@ def dashboard_stats(db: Session = Depends(get_db), _: User = Depends(get_current
 
 
 @app.post("/api/detection/run", response_model=list[AnomalyResponse])
-def run_detection(db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "analyst"))) -> list[AnomalyResponse]:
-    anomalies = analyze_recent_traffic(db)
-    for anomaly in anomalies:
-        if anomaly.severity == "high":
-            try:
-                send_sms_alert(f"NTA Alert: {anomaly.description}")
-            except Exception:
-                pass
-    log_audit(db, current_user.id, "run_detection", f"Detected {len(anomalies)} anomalies")
+def run_detection(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> list[AnomalyResponse]:
+    anomalies = run_detection_job(db, source="manual", user_id=current_user.id)
+    return [_anomaly_response(item) for item in anomalies]
+
+
+@app.post("/api/internal/detection/run", response_model=list[AnomalyResponse])
+def run_detection_internal(
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_internal_api_key),
+) -> list[AnomalyResponse]:
+    anomalies = run_detection_job(db, source="agent")
     return [_anomaly_response(item) for item in anomalies]
 
 
@@ -187,15 +252,6 @@ def review_anomaly(
     db.refresh(anomaly)
     log_audit(db, current_user.id, "review_anomaly", f"Anomaly {anomaly_id} marked {payload.classification}")
     return _anomaly_response(anomaly)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    db = next(get_db())
-    try:
-        seed_admin(db)
-    finally:
-        db.close()
 
 
 def _traffic_log_response(log: TrafficLog) -> TrafficLogResponse:

@@ -26,6 +26,8 @@ class AgentConfig:
     interface: str = settings.agent_interface
     retry_seconds: float = settings.agent_retry_seconds
     subnet_prefix: str = settings.agent_subnet_prefix
+    auto_detect: bool = settings.agent_auto_detect
+    internal_api_key: str = settings.internal_api_key
     shutdown: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
@@ -71,6 +73,7 @@ class TrafficCaptureAgent:
                     sent,
                     self._logs_sent,
                 )
+                self._maybe_trigger_detection()
                 time.sleep(self.config.interval_seconds)
             except requests.RequestException as exc:
                 logger.error("Failed to send traffic logs: %s", exc)
@@ -91,6 +94,8 @@ class TrafficCaptureAgent:
                     return
                 post_log(self.config.api_base_url, payload)
                 self._logs_sent += 1
+                if self._logs_sent % self.config.batch_size == 0:
+                    self._maybe_trigger_detection()
                 if self._logs_sent % 25 == 0:
                     logger.info("Live capture running... total logs sent: %s", self._logs_sent)
             except requests.RequestException as exc:
@@ -189,6 +194,15 @@ class TrafficCaptureAgent:
             sent += 1
         return sent
 
+    def _maybe_trigger_detection(self) -> None:
+        if not self.config.auto_detect or not self.config.internal_api_key:
+            return
+        try:
+            count = trigger_detection(self.config.api_base_url, self.config.internal_api_key)
+            logger.info("Auto-detection triggered after capture batch: %s new anomalies", count)
+        except requests.RequestException as exc:
+            logger.warning("Auto-detection request failed: %s", exc)
+
 
 def generate_sample_log() -> dict[str, object]:
     encrypted = random.random() > 0.2
@@ -236,6 +250,16 @@ def packet_to_payload(packet: object) -> dict[str, object] | None:
 def post_log(api_base_url: str, payload: dict[str, object]) -> None:
     response = requests.post(f"{api_base_url.rstrip('/')}/api/traffic/logs", json=payload, timeout=10)
     response.raise_for_status()
+
+
+def trigger_detection(api_base_url: str, internal_api_key: str) -> int:
+    response = requests.post(
+        f"{api_base_url.rstrip('/')}/api/internal/detection/run",
+        headers={"X-Internal-Api-Key": internal_api_key},
+        timeout=20,
+    )
+    response.raise_for_status()
+    return len(response.json())
 
 
 def scan_local_hosts(subnet_prefix: str = "192.168.1.") -> list[str]:

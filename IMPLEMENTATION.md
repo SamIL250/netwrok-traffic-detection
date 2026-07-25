@@ -11,7 +11,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] Neon PostgreSQL storage
 - [x] Traffic log capture (sample agent + continuous daemon + basic live capture)
 - [x] Dashboard with stats, charts, traffic logs, CSV export
-- [x] Rule-based anomaly detection (unencrypted traffic, bursts, port scans)
+- [x] Rule-based anomaly detection (unencrypted traffic, bursts, port scans) with automatic runs
 - [x] Admin review of anomalies + simple retraining (threshold adjustment)
 - [x] Password strength checker
 - [x] SMS alert code stub (Infobip — not wired up yet)
@@ -21,7 +21,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 ## High Priority (Core Project Gaps)
 
 - [x] **Continuous real-time monitoring** — agent runs as a background service via `--daemon` and start/stop scripts
-- [ ] **Automatic anomaly detection** — run on a schedule or after each capture batch, not only via "Run Detection Now"
+- [x] **Automatic anomaly detection** — scheduled in the API and triggered after each agent capture batch
 - [ ] **Secure the traffic agent** — `/api/traffic/logs` is open; add API key or agent authentication
 - [ ] **Network scanner in the dashboard** — scan exists in CLI only; show active/unauthorized devices in UI and save results to DB
 - [ ] **SMS alerts end-to-end** — configure Infobip, test delivery, show alert status in dashboard
@@ -91,7 +91,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Real-time traffic capture | Partial (continuous daemon; live needs network permissions) |
 | Network traffic dashboard | Done (basic) |
 | Password strength analysis | Done |
-| Anomaly alert generation | Partial (manual trigger) |
+| Anomaly alert generation | Partial (automatic + manual trigger) |
 | SMS alerts | Not configured |
 | Traffic logs (filter + export) | Partial (IP filter + CSV) |
 | Network device scan | Partial (CLI only) |

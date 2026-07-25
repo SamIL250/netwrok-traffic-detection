@@ -98,7 +98,8 @@ def render_dashboard(token: str) -> None:
     else:
         st.warning("No traffic logs yet. Run the agent in sample mode to generate data.")
 
-    if st.button("Run Detection Now"):
+    st.info("Anomaly detection runs automatically on a schedule and after each agent capture batch.")
+    if st.button("Run Detection Now (manual)"):
         result = api_request("POST", "/api/detection/run", token)
         if result.status_code == 200:
             anomalies = result.json()

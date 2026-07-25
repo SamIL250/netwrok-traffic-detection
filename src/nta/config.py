@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     agent_interface: str = "eth0"
     agent_retry_seconds: float = 10.0
     agent_subnet_prefix: str = "192.168.1."
+    agent_auto_detect: bool = True
+
+    detection_auto_enabled: bool = True
+    detection_interval_seconds: int = 30
+    detection_window_minutes: int = 5
+    internal_api_key: str = ""
 
 
 settings = Settings()

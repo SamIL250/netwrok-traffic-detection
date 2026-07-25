@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    must_change_password: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -16,6 +17,7 @@ class UserCreateRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     role_name: str = "viewer"
+    require_password_change: bool = True
 
 
 class UserResponse(BaseModel):
@@ -23,6 +25,7 @@ class UserResponse(BaseModel):
     username: str
     email: EmailStr
     role: str
+    must_change_password: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -33,6 +36,7 @@ class UserDetailResponse(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
+    must_change_password: bool
     created_at: str
 
 
@@ -43,6 +47,7 @@ class UserUpdateRequest(BaseModel):
 
 class AdminPasswordResetRequest(BaseModel):
     new_password: str = Field(min_length=8)
+    require_password_change: bool = True
 
 
 class PasswordChangeRequest(BaseModel):

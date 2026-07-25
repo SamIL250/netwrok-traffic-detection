@@ -41,6 +41,7 @@ from nta.network_service import (
     run_network_scan,
 )
 from nta.models import AlertDelivery, Anomaly, AnomalyFeedback, AnomalyStatus, AuditLog, DiscoveredDevice, IntrusionSignature, KnownDevice, NetworkScan, Role, TrafficLog, User
+from nta.password_policy import validate_new_password
 from nta.password_strength import analyze_password_strength
 from nta.report_service import format_report_period, generate_network_report_pdf
 from nta.schemas import (
@@ -71,7 +72,7 @@ from nta.schemas import (
     UserResponse,
     UserUpdateRequest,
 )
-from nta.seed import init_database, seed_admin
+from nta.seed import ensure_default_admin_password_flag, init_database, migrate_schema, seed_admin
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,9 @@ async def lifespan(app: FastAPI):
     init_database()
     db = next(get_db())
     try:
+        migrate_schema(db)
         seed_admin(db)
+        ensure_default_admin_password_flag(db)
     finally:
         db.close()
 
@@ -144,7 +147,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     log_audit(db, user.id, "login", f"User {user.username} logged in")
-    return TokenResponse(access_token=create_access_token(user.username))
+    return TokenResponse(
+        access_token=create_access_token(user.username),
+        must_change_password=user.must_change_password,
+    )
 
 
 @app.get("/api/auth/me", response_model=UserResponse)
@@ -154,6 +160,7 @@ def me(current_user: User = Depends(get_current_user)) -> UserResponse:
         username=current_user.username,
         email=current_user.email,
         role=current_user.role.name,
+        must_change_password=current_user.must_change_password,
     )
 
 
@@ -164,6 +171,7 @@ def _user_to_detail(user: User) -> UserDetailResponse:
         email=user.email,
         role=user.role.name,
         is_active=user.is_active,
+        must_change_password=user.must_change_password,
         created_at=user.created_at.isoformat() if user.created_at else "",
     )
 
@@ -177,11 +185,17 @@ def change_password(
     if not verify_password(payload.current_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    strength = analyze_password_strength(payload.new_password)
-    if strength["level"] == "weak":
-        raise HTTPException(status_code=400, detail="Password is too weak")
+    try:
+        validate_new_password(
+            payload.new_password,
+            current_password_hash=current_user.password_hash,
+            current_password=payload.current_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     current_user.password_hash = hash_password(payload.new_password)
+    current_user.must_change_password = False
     db.commit()
     log_audit(db, current_user.id, "change_password", f"User {current_user.username} changed password")
     return {"detail": "Password updated"}
@@ -202,9 +216,10 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin")),
 ) -> UserResponse:
-    strength = analyze_password_strength(payload.password)
-    if strength["level"] == "weak":
-        raise HTTPException(status_code=400, detail="Password is too weak")
+    try:
+        validate_new_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     role = db.query(Role).filter(Role.name == payload.role_name).first()
     if role is None:
@@ -218,12 +233,19 @@ def create_user(
         email=payload.email,
         password_hash=hash_password(payload.password),
         role_id=role.id,
+        must_change_password=payload.require_password_change,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     log_audit(db, current_user.id, "create_user", f"Created user {user.username}")
-    return UserResponse(id=user.id, username=user.username, email=user.email, role=role.name)
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=role.name,
+        must_change_password=user.must_change_password,
+    )
 
 
 @app.patch("/api/users/{user_id}", response_model=UserDetailResponse)
@@ -275,13 +297,20 @@ def reset_user_password(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    strength = analyze_password_strength(payload.new_password)
-    if strength["level"] == "weak":
-        raise HTTPException(status_code=400, detail="Password is too weak")
+    try:
+        validate_new_password(payload.new_password, current_password_hash=user.password_hash)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = payload.require_password_change
     db.commit()
-    log_audit(db, current_user.id, "reset_password", f"Reset password for user {user.username}")
+    log_audit(
+        db,
+        current_user.id,
+        "reset_password",
+        f"Reset password for user {user.username} (require_change={payload.require_password_change})",
+    )
     return {"detail": "Password reset"}
 
 

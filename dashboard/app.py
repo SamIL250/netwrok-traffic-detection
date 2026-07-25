@@ -5,6 +5,7 @@ import plotly.express as px
 import requests
 import streamlit as st
 
+from change_password_page import render_change_password_screen
 from login_page import render_login_screen
 from navigation import NAV_PAGE_KEY, render_sidebar_nav
 from session import clear_session, get_cookie_manager, get_stored_token, persist_session
@@ -87,13 +88,18 @@ def main() -> None:
         st.stop()
 
     me = me_response.json()
+    force_password_change = bool(me.get("must_change_password"))
 
     with st.sidebar:
-        page = render_sidebar_nav(me)
+        page = render_sidebar_nav(me, force_password_change=force_password_change)
     if page == "__logout__":
         clear_session()
         st.session_state.pop(NAV_PAGE_KEY, None)
         st.rerun()
+
+    if force_password_change:
+        render_change_password(token, forced=True)
+        return
 
     if page == "Dashboard":
         render_dashboard(token)
@@ -114,7 +120,7 @@ def main() -> None:
     elif page == "Reports":
         render_reports(token, me)
     elif page == "Change Password":
-        render_change_password(token)
+        render_change_password(token, forced=False)
     else:
         render_password_checker(token)
 
@@ -879,35 +885,13 @@ def render_reports(token: str, me: dict) -> None:
         )
 
 
-def render_change_password(token: str) -> None:
-    st.title("Change Password")
-    st.caption("Update your account password. Use a strong password with mixed characters.")
-
-    current_password = st.text_input("Current password", type="password")
-    new_password = st.text_input("New password", type="password")
-    confirm_password = st.text_input("Confirm new password", type="password")
-
-    if new_password:
-        strength = api_request("POST", "/api/password/strength", token, params={"password": new_password}).json()
-        st.metric("New password strength", strength["level"].title())
-        st.caption(strength["message"])
-
-    if st.button("Update Password", type="primary"):
-        if not current_password or not new_password:
-            st.error("Enter your current and new passwords.")
-        elif new_password != confirm_password:
-            st.error("New passwords do not match.")
-        else:
-            response = api_request(
-                "POST",
-                "/api/auth/change-password",
-                token,
-                json={"current_password": current_password, "new_password": new_password},
-            )
-            if response.status_code == 200:
-                st.success("Password updated successfully.")
-            else:
-                st.error(format_api_error(response, "Could not update password."))
+def render_change_password(token: str, *, forced: bool = False) -> None:
+    render_change_password_screen(
+        token,
+        forced=forced,
+        api_request=api_request,
+        format_api_error=format_api_error,
+    )
 
 
 def render_user_management(token: str, me: dict) -> None:
@@ -923,6 +907,11 @@ def render_user_management(token: str, me: dict) -> None:
         email = st.text_input("Email", key="new-user-email")
         password = st.text_input("Initial password", type="password", key="new-user-password")
         role_name = st.selectbox("Role", ["viewer", "analyst", "admin"], key="new-user-role")
+        require_password_change = st.checkbox(
+            "Require password change on first login",
+            value=True,
+            key="new-user-require-change",
+        )
 
         if password:
             strength = api_request("POST", "/api/password/strength", token, params={"password": password}).json()
@@ -941,6 +930,7 @@ def render_user_management(token: str, me: dict) -> None:
                         "email": email,
                         "password": password,
                         "role_name": role_name,
+                        "require_password_change": require_password_change,
                     },
                 )
                 if response.status_code == 200:
@@ -961,8 +951,13 @@ def render_user_management(token: str, me: dict) -> None:
 
     df = pd.DataFrame(users)
     df["status"] = df["is_active"].map({True: "Active", False: "Disabled"})
+    df["password_status"] = df["must_change_password"].map(
+        {True: "Change required", False: "Up to date"}
+    )
     st.dataframe(
-        df[["username", "email", "role", "status", "created_at"]],
+        df[["username", "email", "role", "status", "password_status", "created_at"]].rename(
+            columns={"password_status": "Password"}
+        ),
         use_container_width=True,
         hide_index=True,
     )
@@ -1019,9 +1014,14 @@ def render_user_management(token: str, me: dict) -> None:
                 st.error(format_api_error(update_response, "Could not update user."))
 
     st.subheader("Force password reset")
-    st.caption("Set a new password for this user. Share it securely; they should change it after signing in.")
+    st.caption("Set a new password for this user. Share it securely; they will be prompted to change it on next login.")
     reset_password = st.text_input("New password", type="password", key=f"reset-pw-{selected_user['id']}")
     reset_confirm = st.text_input("Confirm new password", type="password", key=f"reset-pw-confirm-{selected_user['id']}")
+    require_change_on_login = st.checkbox(
+        "Require password change on next login",
+        value=True,
+        key=f"reset-require-change-{selected_user['id']}",
+    )
 
     if reset_password:
         strength = api_request("POST", "/api/password/strength", token, params={"password": reset_password}).json()
@@ -1037,7 +1037,10 @@ def render_user_management(token: str, me: dict) -> None:
                 "POST",
                 f"/api/users/{selected_user['id']}/reset-password",
                 token,
-                json={"new_password": reset_password},
+                json={
+                    "new_password": reset_password,
+                    "require_password_change": require_change_on_login,
+                },
             )
             if reset_response.status_code == 200:
                 st.success(f"Password reset for {selected_user['username']}.")

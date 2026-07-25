@@ -198,7 +198,7 @@ def render_login_screen(login_fn: Callable[[str, str], str | None]) -> str | Non
             """
             <div class="login-help-card">
                 Default admin: <strong>admin</strong> / <strong>Admin@123</strong><br>
-                Change this password after your first login.
+                You will be required to set a new password immediately after signing in.
             </div>
             """,
             unsafe_allow_html=True,

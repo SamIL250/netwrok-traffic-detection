@@ -1,5 +1,5 @@
 from nta.database import SessionLocal
-from nta.seed import init_database, seed_admin
+from nta.seed import ensure_default_admin_password_flag, init_database, migrate_schema, seed_admin
 
 
 def main() -> None:
@@ -7,10 +7,12 @@ def main() -> None:
     init_database()
     db = SessionLocal()
     try:
+        migrate_schema(db)
         admin = seed_admin(db)
+        ensure_default_admin_password_flag(db)
         print("Database ready.")
         print(f"Admin user: {admin.username}")
-        print("Default password: Admin@123")
+        print("Default password: Admin@123 (must be changed on first login)")
     finally:
         db.close()
 

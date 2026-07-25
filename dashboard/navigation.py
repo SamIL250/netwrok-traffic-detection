@@ -411,9 +411,17 @@ def render_sidebar_footer(me: dict[str, str]) -> str | None:
     return None
 
 
-def render_sidebar_nav(me: dict[str, str]) -> str:
+def render_sidebar_nav(me: dict[str, str], *, force_password_change: bool = False) -> str:
     st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
     render_sidebar_brand()
+
+    if force_password_change:
+        st.warning("You must change your password before using the dashboard.")
+        logout = render_sidebar_footer(me)
+        if logout:
+            return logout
+        st.session_state[NAV_PAGE_KEY] = "Change Password"
+        return "Change Password"
 
     allowed_pages = _all_page_ids(me["role"])
     current_page = st.session_state.get(NAV_PAGE_KEY, DEFAULT_PAGE)

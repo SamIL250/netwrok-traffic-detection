@@ -25,7 +25,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Secure the traffic agent** — `/api/traffic/logs` requires `X-Agent-Api-Key` header
 - [x] **Network scanner in the dashboard** — scan active/unauthorized devices, save results to DB, authorize devices
 - [x] **Email alerts end-to-end** — SMTP configured, test delivery, alert status in dashboard
-- [x] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)
+- [x] **User management UI** — create users, assign roles, disable accounts, force password change
 - [x] **Traffic log filters** — add date range filtering (PDF mentions date + IP; currently IP only)
 - [x] **Audit log page** — who logged in, reviewed anomalies, exported data (data is stored, no UI)
 
@@ -37,7 +37,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Stronger retraining model** — today only threshold tweaks; add signature/rule learning from confirmed intrusions
 - [x] **Intrusion analytics charts** — breakdown by type (brute force, port scan, unencrypted), trends over time
 - [x] **Alert management module** — list alerts, severity, status history, retry failed email
-- [ ] **Password reset / change password flow** — especially replace default `admin` password safely
+- [x] **Password reset / change password flow** — especially replace default `admin` password safely
 - [ ] **Proper DB migrations** — Alembic instead of `create_all()` for schema changes
 - [ ] **Logout / session handling** — token expiry exists, but no proper session revoke or blacklist
 - [ ] **RBAC in the UI** — hide or disable actions per role (viewer read-only, analyst can review, admin manages users)
@@ -85,7 +85,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 
 | Feature | Status |
 |---------|--------|
-| Secure login / logout | Partial (login yes, logout basic) |
+| Secure login / logout | Partial (login + forced password change; logout basic) |
 | Role-based access control | Partial (API yes, UI incomplete) |
 | Real-time traffic capture | Partial (continuous daemon; live needs network permissions) |
 | Network traffic dashboard | Done (basic) |

@@ -106,51 +106,78 @@ Change this password before any production use.
 
 ## Running the Project
 
-You need **three terminals** (or run the agent only when you want test data).
+### One command (recommended)
 
-Set `PYTHONPATH` in each terminal:
+From the project root:
 
 ```bash
-cd network-traffic-analysis
+./start.sh
+```
+
+This starts everything in the background:
+- API server → http://127.0.0.1:8000
+- Dashboard → http://localhost:8501
+- Traffic capture agent (continuous monitoring)
+
+Other commands:
+
+```bash
+./start.sh stop      # stop all services
+./start.sh status    # check what's running
+./start.sh restart   # restart everything
+./start.sh logs      # tail all logs
+./start.sh init-db   # initialize database
+```
+
+Logs are written to `.run/` (`api.log`, `dashboard.log`, `agent.log`).
+
+---
+
+### Manual mode (separate terminals)
+
+Use this only if you want to run services individually for development:
+
+```bash
 source .venv/bin/activate
 export PYTHONPATH=src
 ```
 
-### Terminal 1 — API server
-
 ```bash
+# Terminal 1 — API
 uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
 
-API docs: http://127.0.0.1:8000/docs
-
-### Terminal 2 — Dashboard
-
-```bash
+# Terminal 2 — Dashboard
 streamlit run dashboard/app.py
+
+# Terminal 3 — Agent
+python agent/capture.py --daemon
 ```
 
-Open: http://localhost:8501
+Configure the agent in `.env`:
 
-### Terminal 3 — Traffic agent (optional, for test data)
+```env
+AGENT_MODE=sample
+AGENT_INTERVAL_SECONDS=5
+AGENT_BATCH_SIZE=5
+AGENT_INTERFACE=eth0
+```
+
+### One-shot agent (manual test data)
 
 ```bash
-# Sample/fake traffic (good for demos)
 python agent/capture.py --mode sample --count 25
-
-# Live packet capture (requires root / CAP_NET_RAW)
 python agent/capture.py --mode live --interface eth0 --count 50
-
-# Scan local network for active hosts
 python agent/capture.py --mode scan --subnet-prefix 192.168.1.
 ```
 
-### Helper script (alternative)
+### Production service (systemd)
+
+Copy and edit `deploy/nta-agent.service`, then:
 
 ```bash
-./scripts/run.sh api
-./scripts/run.sh dashboard
-./scripts/run.sh agent --mode sample --count 25
+sudo cp deploy/nta-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now nta-agent
 ```
 
 ---

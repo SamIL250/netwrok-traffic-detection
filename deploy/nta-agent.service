@@ -1,0 +1,16 @@
+[Unit]
+Description=Network Traffic Capture Agent
+After=network.target
+
+[Service]
+Type=simple
+User=sam
+WorkingDirectory=/home/sam/development/private/network-traffic-analysis
+Environment=PYTHONPATH=/home/sam/development/private/network-traffic-analysis/src
+EnvironmentFile=/home/sam/development/private/network-traffic-analysis/.env
+ExecStart=/home/sam/development/private/network-traffic-analysis/.venv/bin/python3 agent/capture.py --daemon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -14,5 +14,12 @@ class Settings(BaseSettings):
     infobip_sender: str = ""
     alert_phone_number: str = ""
 
+    agent_mode: str = "sample"
+    agent_interval_seconds: float = 5.0
+    agent_batch_size: int = 5
+    agent_interface: str = "eth0"
+    agent_retry_seconds: float = 10.0
+    agent_subnet_prefix: str = "192.168.1."
+
 
 settings = Settings()

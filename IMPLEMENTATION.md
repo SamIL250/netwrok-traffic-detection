@@ -9,7 +9,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] Admin login with bcrypt + JWT
 - [x] Role-based access in the API (admin / analyst / viewer)
 - [x] Neon PostgreSQL storage
-- [x] Traffic log capture (sample agent + basic live capture code)
+- [x] Traffic log capture (sample agent + continuous daemon + basic live capture)
 - [x] Dashboard with stats, charts, traffic logs, CSV export
 - [x] Rule-based anomaly detection (unencrypted traffic, bursts, port scans)
 - [x] Admin review of anomalies + simple retraining (threshold adjustment)
@@ -20,7 +20,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 
 ## High Priority (Core Project Gaps)
 
-- [ ] **Continuous real-time monitoring** — agent runs as a background service, not manually each time
+- [x] **Continuous real-time monitoring** — agent runs as a background service via `--daemon` and start/stop scripts
 - [ ] **Automatic anomaly detection** — run on a schedule or after each capture batch, not only via "Run Detection Now"
 - [ ] **Secure the traffic agent** — `/api/traffic/logs` is open; add API key or agent authentication
 - [ ] **Network scanner in the dashboard** — scan exists in CLI only; show active/unauthorized devices in UI and save results to DB
@@ -88,7 +88,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 |---------|--------|
 | Secure login / logout | Partial (login yes, logout basic) |
 | Role-based access control | Partial (API yes, UI incomplete) |
-| Real-time traffic capture | Partial (manual agent) |
+| Real-time traffic capture | Partial (continuous daemon; live needs network permissions) |
 | Network traffic dashboard | Done (basic) |
 | Password strength analysis | Done |
 | Anomaly alert generation | Partial (manual trigger) |

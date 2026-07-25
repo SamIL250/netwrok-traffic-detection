@@ -2,7 +2,7 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -72,3 +72,16 @@ def require_roles(*allowed_roles: str):
 def log_audit(db: Session, user_id: int | None, action: str, details: str = "") -> None:
     db.add(AuditLog(user_id=user_id, action=action, details=details))
     db.commit()
+
+
+AGENT_API_KEY_HEADER = "X-Agent-Api-Key"
+
+
+def verify_agent_api_key(x_agent_api_key: str | None = Header(default=None, alias=AGENT_API_KEY_HEADER)) -> None:
+    if not settings.agent_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Agent API key not configured on server",
+        )
+    if x_agent_api_key != settings.agent_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent API key")

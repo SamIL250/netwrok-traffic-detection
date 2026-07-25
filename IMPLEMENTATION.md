@@ -22,7 +22,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 
 - [x] **Continuous real-time monitoring** — agent runs as a background service via `--daemon` and start/stop scripts
 - [x] **Automatic anomaly detection** — scheduled in the API and triggered after each agent capture batch
-- [ ] **Secure the traffic agent** — `/api/traffic/logs` is open; add API key or agent authentication
+- [x] **Secure the traffic agent** — `/api/traffic/logs` requires `X-Agent-Api-Key` header
 - [ ] **Network scanner in the dashboard** — scan exists in CLI only; show active/unauthorized devices in UI and save results to DB
 - [ ] **SMS alerts end-to-end** — configure Infobip, test delivery, show alert status in dashboard
 - [ ] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)

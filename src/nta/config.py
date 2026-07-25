@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,11 +22,14 @@ class Settings(BaseSettings):
     agent_retry_seconds: float = 10.0
     agent_subnet_prefix: str = "192.168.1."
     agent_auto_detect: bool = True
+    agent_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENT_API_KEY", "INTERNAL_API_KEY"),
+    )
 
     detection_auto_enabled: bool = True
     detection_interval_seconds: int = 30
     detection_window_minutes: int = 5
-    internal_api_key: str = ""
 
 
 settings = Settings()

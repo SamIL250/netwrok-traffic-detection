@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import requests
 
+from nta.auth import AGENT_API_KEY_HEADER
 from nta.config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class AgentConfig:
     retry_seconds: float = settings.agent_retry_seconds
     subnet_prefix: str = settings.agent_subnet_prefix
     auto_detect: bool = settings.agent_auto_detect
-    internal_api_key: str = settings.internal_api_key
+    agent_api_key: str = settings.agent_api_key
     shutdown: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
@@ -52,6 +53,10 @@ class TrafficCaptureAgent:
 
         if not self._wait_for_api():
             logger.error("API never became reachable. Exiting.")
+            return
+
+        if not self.config.agent_api_key:
+            logger.error("AGENT_API_KEY is not configured. Set it in .env before starting the agent.")
             return
 
         if self.config.mode == "live":
@@ -92,7 +97,7 @@ class TrafficCaptureAgent:
                 payload = packet_to_payload(packet)
                 if payload is None:
                     return
-                post_log(self.config.api_base_url, payload)
+                post_log(self.config.api_base_url, payload, self.config.agent_api_key)
                 self._logs_sent += 1
                 if self._logs_sent % self.config.batch_size == 0:
                     self._maybe_trigger_detection()
@@ -113,7 +118,7 @@ class TrafficCaptureAgent:
     def run_once_sample(self, count: int, interval: float) -> None:
         for index in range(count):
             payload = generate_sample_log()
-            post_log(self.config.api_base_url, payload)
+            post_log(self.config.api_base_url, payload, self.config.agent_api_key)
             logger.info("[%s/%s] logged %s -> %s", index + 1, count, payload["src_ip"], payload["dst_ip"])
             time.sleep(interval)
 
@@ -131,7 +136,7 @@ class TrafficCaptureAgent:
             payload = packet_to_payload(packet)
             if payload is None:
                 return
-            post_log(self.config.api_base_url, payload)
+            post_log(self.config.api_base_url, payload, self.config.agent_api_key)
             processed["count"] += 1
             logger.info(
                 "[%s/%s] captured %s -> %s",
@@ -190,15 +195,15 @@ class TrafficCaptureAgent:
             if self.config.shutdown:
                 break
             payload = generate_sample_log()
-            post_log(self.config.api_base_url, payload)
+            post_log(self.config.api_base_url, payload, self.config.agent_api_key)
             sent += 1
         return sent
 
     def _maybe_trigger_detection(self) -> None:
-        if not self.config.auto_detect or not self.config.internal_api_key:
+        if not self.config.auto_detect or not self.config.agent_api_key:
             return
         try:
-            count = trigger_detection(self.config.api_base_url, self.config.internal_api_key)
+            count = trigger_detection(self.config.api_base_url, self.config.agent_api_key)
             logger.info("Auto-detection triggered after capture batch: %s new anomalies", count)
         except requests.RequestException as exc:
             logger.warning("Auto-detection request failed: %s", exc)
@@ -247,15 +252,24 @@ def packet_to_payload(packet: object) -> dict[str, object] | None:
     }
 
 
-def post_log(api_base_url: str, payload: dict[str, object]) -> None:
-    response = requests.post(f"{api_base_url.rstrip('/')}/api/traffic/logs", json=payload, timeout=10)
+def agent_request_headers(agent_api_key: str) -> dict[str, str]:
+    return {AGENT_API_KEY_HEADER: agent_api_key}
+
+
+def post_log(api_base_url: str, payload: dict[str, object], agent_api_key: str) -> None:
+    response = requests.post(
+        f"{api_base_url.rstrip('/')}/api/traffic/logs",
+        json=payload,
+        headers=agent_request_headers(agent_api_key),
+        timeout=10,
+    )
     response.raise_for_status()
 
 
-def trigger_detection(api_base_url: str, internal_api_key: str) -> int:
+def trigger_detection(api_base_url: str, agent_api_key: str) -> int:
     response = requests.post(
         f"{api_base_url.rstrip('/')}/api/internal/detection/run",
-        headers={"X-Internal-Api-Key": internal_api_key},
+        headers=agent_request_headers(agent_api_key),
         timeout=20,
     )
     response.raise_for_status()

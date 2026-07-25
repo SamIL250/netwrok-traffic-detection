@@ -63,9 +63,14 @@ Required values in `.env`:
 DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST/DATABASE?sslmode=require
 SECRET_KEY=your-long-random-secret-key
 API_BASE_URL=http://127.0.0.1:8000
+AGENT_API_KEY=your-agent-api-key
 ```
 
 Use the **pooled** Neon connection string and prefix it with `postgresql+psycopg://` (not just `postgresql://`).
+
+The **same** `AGENT_API_KEY` must be set on the server and used by the traffic capture agent. It protects:
+- `POST /api/traffic/logs` (traffic ingest)
+- `POST /api/internal/detection/run` (agent-triggered detection)
 
 Optional SMS alert settings (Infobip):
 
@@ -224,6 +229,7 @@ network-traffic-analysis/
 | Dashboard can't reach API | Ensure API is running; check `API_BASE_URL` |
 | `python3 -m venv` fails | Install `python3-venv` or use the get-pip bootstrap above |
 | Live capture fails | Run with sudo or grant `CAP_NET_RAW`; set correct `--interface` |
+| Agent gets 401 errors | Set matching `AGENT_API_KEY` in `.env` and restart all services |
 
 ---
 
@@ -231,5 +237,5 @@ network-traffic-analysis/
 
 - Never commit `.env` — it is gitignored
 - Keep real credentials out of `.env.example`
-- Secure the traffic ingest endpoint before production (see IMPLEMENTATION.md)
+- Traffic ingest requires the `X-Agent-Api-Key` header (`AGENT_API_KEY` in `.env`)
 - Replace the default admin password after first login

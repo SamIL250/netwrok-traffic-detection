@@ -3,13 +3,21 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from nta.auth import authenticate_user, create_access_token, get_current_user, hash_password, log_audit, require_roles
+from nta.auth import (
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    hash_password,
+    log_audit,
+    require_roles,
+    verify_agent_api_key,
+)
 from nta.config import settings
 from nta.database import SessionLocal, get_db
 from nta.detection import apply_feedback
@@ -28,7 +36,6 @@ from nta.schemas import (
     UserResponse,
 )
 from nta.seed import seed_admin
-from nta.sms import send_sms_alert
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +94,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-def verify_internal_api_key(x_internal_api_key: str | None = Header(default=None)) -> None:
-    if not settings.internal_api_key:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Internal API key not configured")
-    if x_internal_api_key != settings.internal_api_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal API key")
 
 
 @app.get("/health")
@@ -157,7 +157,11 @@ def password_strength(password: str) -> PasswordStrengthResponse:
 
 
 @app.post("/api/traffic/logs", response_model=TrafficLogResponse)
-def create_traffic_log(payload: TrafficLogCreate, db: Session = Depends(get_db)) -> TrafficLogResponse:
+def create_traffic_log(
+    payload: TrafficLogCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_api_key),
+) -> TrafficLogResponse:
     log = TrafficLog(**payload.model_dump())
     db.add(log)
     db.commit()
@@ -208,7 +212,7 @@ def run_detection(
 @app.post("/api/internal/detection/run", response_model=list[AnomalyResponse])
 def run_detection_internal(
     db: Session = Depends(get_db),
-    _: None = Depends(verify_internal_api_key),
+    _: None = Depends(verify_agent_api_key),
 ) -> list[AnomalyResponse]:
     anomalies = run_detection_job(db, source="agent")
     return [_anomaly_response(item) for item in anomalies]

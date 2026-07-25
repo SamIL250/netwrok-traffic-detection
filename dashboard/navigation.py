@@ -314,6 +314,7 @@ NAV_SECTIONS: list[dict[str, object]] = [
             {"id": "Network Scan", "label": "Network Scan", "icon": ":material/radar:"},
             {"id": "Traffic Logs", "label": "Traffic Logs", "icon": ":material/swap_horiz:"},
             {"id": "Anomalies", "label": "Anomalies", "icon": ":material/gpp_maybe:"},
+            {"id": "Intrusion Analytics", "label": "Intrusion Analytics", "icon": ":material/analytics:"},
             {"id": "Email Alerts", "label": "Email Alerts", "icon": ":material/mail:"},
         ],
     },

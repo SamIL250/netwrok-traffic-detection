@@ -103,6 +103,8 @@ def main() -> None:
         render_traffic_logs(token)
     elif page == "Anomalies":
         render_anomalies(token, me["role"])
+    elif page == "Intrusion Analytics":
+        render_intrusion_analytics(token)
     elif page == "Email Alerts":
         render_email_alerts(token, me["role"])
     elif page == "User Management":
@@ -393,6 +395,130 @@ def render_audit_logs(token: str, me: dict) -> None:
         csv_buffer.getvalue(),
         file_name="audit_log.csv",
         mime="text/csv",
+    )
+
+
+def render_intrusion_analytics(token: str) -> None:
+    st.title("Intrusion Analytics")
+    st.caption("Breakdown of detected intrusions by type, severity, and trends over time.")
+
+    filter_by_date = st.checkbox("Filter by date range", value=False, key="analytics-filter-by-date")
+    start_date = None
+    end_date = None
+    if filter_by_date:
+        col_from, col_to = st.columns(2)
+        with col_from:
+            start_date = st.date_input("From date", key="analytics-start-date")
+        with col_to:
+            end_date = st.date_input("To date", key="analytics-end-date")
+
+    if start_date and end_date and start_date > end_date:
+        st.error("From date must be on or before to date.")
+        return
+
+    params: dict[str, object] = {}
+    if start_date:
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        params["end_date"] = end_date.isoformat()
+
+    response = api_request("GET", "/api/analytics/intrusions", token, params=params)
+    if response.status_code != 200:
+        st.error(format_api_error(response, "Could not load intrusion analytics."))
+        return
+
+    analytics = response.json()
+    if analytics["total_anomalies"] == 0:
+        st.info("No anomalies recorded for the selected period.")
+        return
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Intrusions", analytics["total_anomalies"])
+    col2.metric("Open", analytics["open_anomalies"])
+    col3.metric("Confirmed", analytics["confirmed_anomalies"])
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        type_df = pd.DataFrame(analytics["by_type"])
+        if not type_df.empty:
+            fig_types = px.pie(
+                type_df,
+                names="label",
+                values="count",
+                title="Intrusions by Type",
+                hole=0.45,
+                color="label",
+                color_discrete_sequence=px.colors.qualitative.Set2,
+            )
+            fig_types.update_traces(textposition="inside", textinfo="percent+label")
+            fig_types.update_layout(showlegend=False, margin=dict(t=50, b=20, l=20, r=20))
+            st.plotly_chart(fig_types, use_container_width=True)
+
+    with chart_col2:
+        severity_df = pd.DataFrame(analytics["by_severity"])
+        if not severity_df.empty:
+            severity_df["severity_label"] = severity_df["severity"].str.title()
+            fig_severity = px.bar(
+                severity_df,
+                x="severity_label",
+                y="count",
+                title="Intrusions by Severity",
+                color="severity_label",
+                color_discrete_sequence=px.colors.qualitative.Pastel,
+            )
+            fig_severity.update_layout(showlegend=False, xaxis_title="", yaxis_title="Count", margin=dict(t=50, b=20, l=20, r=20))
+            st.plotly_chart(fig_severity, use_container_width=True)
+
+    trend_df = pd.DataFrame(analytics["trend"])
+    if not trend_df.empty:
+        trend_df["period"] = pd.to_datetime(trend_df["period"])
+        fig_trend = px.line(
+            trend_df,
+            x="period",
+            y="count",
+            color="label",
+            markers=True,
+            title="Intrusion Trend Over Time",
+            color_discrete_sequence=px.colors.qualitative.Set2,
+        )
+        fig_trend.update_layout(xaxis_title="Date", yaxis_title="Detections", margin=dict(t=50, b=20, l=20, r=20))
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+        stacked_df = trend_df.pivot_table(index="period", columns="label", values="count", fill_value=0).reset_index()
+        type_columns = [col for col in stacked_df.columns if col != "period"]
+        fig_stacked = px.bar(
+            stacked_df,
+            x="period",
+            y=type_columns,
+            title="Daily Intrusion Mix by Type",
+            color_discrete_sequence=px.colors.qualitative.Set2,
+        )
+        fig_stacked.update_layout(barmode="stack", xaxis_title="Date", yaxis_title="Detections", margin=dict(t=50, b=20, l=20, r=20))
+        st.plotly_chart(fig_stacked, use_container_width=True)
+
+    top_sources_df = pd.DataFrame(analytics["top_source_ips"])
+    if not top_sources_df.empty:
+        fig_sources = px.bar(
+            top_sources_df,
+            x="source_ip",
+            y="count",
+            title="Top Source IPs",
+            color="count",
+            color_continuous_scale="Blues",
+        )
+        fig_sources.update_layout(showlegend=False, xaxis_title="", yaxis_title="Detections", margin=dict(t=50, b=20, l=20, r=20))
+        st.plotly_chart(fig_sources, use_container_width=True)
+
+    status_df = pd.DataFrame(analytics["by_status"])
+    if status_df.empty:
+        return
+
+    status_df["status_label"] = status_df["status"].str.replace("_", " ").str.title()
+    st.dataframe(
+        status_df[["status_label", "count"]].rename(columns={"status_label": "Status", "count": "Count"}),
+        use_container_width=True,
+        hide_index=True,
     )
 
 

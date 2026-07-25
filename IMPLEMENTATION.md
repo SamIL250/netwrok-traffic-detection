@@ -35,7 +35,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 
 - [x] **PDF report export** — generate downloadable reports for admins
 - [x] **Stronger retraining model** — today only threshold tweaks; add signature/rule learning from confirmed intrusions
-- [ ] **Intrusion analytics charts** — breakdown by type (brute force, port scan, unencrypted), trends over time
+- [x] **Intrusion analytics charts** — breakdown by type (brute force, port scan, unencrypted), trends over time
 - [ ] **Alert management module** — list alerts, severity, status history, retry failed email
 - [ ] **Password reset / change password flow** — especially replace default `admin` password safely
 - [ ] **Proper DB migrations** — Alembic instead of `create_all()` for schema changes

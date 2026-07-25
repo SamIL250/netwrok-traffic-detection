@@ -107,6 +107,45 @@ class DashboardStats(BaseModel):
     open_anomalies: int
 
 
+class AnomalyTypeCount(BaseModel):
+    anomaly_type: str
+    label: str
+    count: int
+
+
+class AnomalySeverityCount(BaseModel):
+    severity: str
+    count: int
+
+
+class AnomalyStatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class AnomalyTrendPoint(BaseModel):
+    period: str
+    anomaly_type: str
+    label: str
+    count: int
+
+
+class AnomalySourceCount(BaseModel):
+    source_ip: str
+    count: int
+
+
+class IntrusionAnalyticsResponse(BaseModel):
+    total_anomalies: int
+    open_anomalies: int
+    confirmed_anomalies: int
+    by_type: list[AnomalyTypeCount]
+    by_severity: list[AnomalySeverityCount]
+    by_status: list[AnomalyStatusCount]
+    trend: list[AnomalyTrendPoint]
+    top_source_ips: list[AnomalySourceCount]
+
+
 class NetworkScanRequest(BaseModel):
     subnet_prefix: str = Field(default="192.168.1.", max_length=50)
 

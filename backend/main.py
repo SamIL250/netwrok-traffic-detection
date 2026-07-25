@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from nta.alert_service import list_alert_deliveries, send_test_email_alert
+from nta.analytics_service import get_intrusion_analytics
 from nta.auth import (
     authenticate_user,
     create_access_token,
@@ -46,6 +47,7 @@ from nta.schemas import (
     DiscoveredDeviceResponse,
     IntrusionSignatureResponse,
     IntrusionSignatureUpdateRequest,
+    IntrusionAnalyticsResponse,
     KnownDeviceCreate,
     KnownDeviceResponse,
     NetworkScanRequest,
@@ -364,6 +366,20 @@ def list_anomalies(
     if status_filter:
         query = query.filter(Anomaly.status == status_filter)
     return [_anomaly_response(item) for item in query.limit(100).all()]
+
+
+@app.get("/api/analytics/intrusions", response_model=IntrusionAnalyticsResponse)
+def intrusion_analytics(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> IntrusionAnalyticsResponse:
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
+    data = get_intrusion_analytics(db, start_date, end_date)
+    return IntrusionAnalyticsResponse(**data)
 
 
 @app.post("/api/anomalies/{anomaly_id}/feedback", response_model=AnomalyResponse)

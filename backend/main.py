@@ -10,7 +10,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from nta.alert_service import list_alert_deliveries, send_test_email_alert
+from nta.alert_service import (
+    get_alert_history,
+    list_alert_deliveries,
+    list_alerts,
+    retry_alert_delivery,
+    send_test_email_alert,
+)
 from nta.analytics_service import get_intrusion_analytics
 from nta.auth import (
     authenticate_user,
@@ -39,6 +45,8 @@ from nta.password_strength import analyze_password_strength
 from nta.report_service import format_report_period, generate_network_report_pdf
 from nta.schemas import (
     AlertDeliveryResponse,
+    AlertStatusHistoryEntry,
+    AlertSummaryResponse,
     AnomalyFeedbackRequest,
     AnomalyResponse,
     AuditLogResponse,
@@ -452,6 +460,74 @@ def update_intrusion_signature(
     return _intrusion_signature_response(signature)
 
 
+@app.get("/api/alerts", response_model=list[AlertSummaryResponse])
+def get_alerts(
+    delivery_status: str | None = None,
+    severity: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[AlertSummaryResponse]:
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+    if delivery_status and delivery_status not in {"sent", "failed"}:
+        raise HTTPException(status_code=400, detail="delivery_status must be sent or failed")
+    if severity and severity not in {"low", "medium", "high", "info"}:
+        raise HTTPException(status_code=400, detail="Invalid severity filter")
+
+    items = list_alerts(
+        db,
+        delivery_status=delivery_status,
+        severity=severity,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+    )
+    return [_alert_summary_response(item) for item in items]
+
+
+@app.get("/api/alerts/history", response_model=list[AlertStatusHistoryEntry])
+def get_alert_status_history(
+    anomaly_id: int | None = None,
+    delivery_id: int | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[AlertStatusHistoryEntry]:
+    if anomaly_id is None and delivery_id is None:
+        raise HTTPException(status_code=400, detail="anomaly_id or delivery_id is required")
+
+    try:
+        history = get_alert_history(db, anomaly_id=anomaly_id, delivery_id=delivery_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return [_alert_history_entry_response(item) for item in history]
+
+
+@app.post("/api/alerts/delivery/{delivery_id}/retry", response_model=AlertDeliveryResponse)
+def retry_failed_alert_email(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> AlertDeliveryResponse:
+    try:
+        delivery = retry_alert_delivery(db, delivery_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    log_audit(
+        db,
+        current_user.id,
+        "retry_email_alert",
+        f"Retried alert delivery #{delivery_id}; new status: {delivery.status}",
+    )
+    return _alert_delivery_response(delivery)
+
+
 @app.get("/api/alerts/delivery", response_model=list[AlertDeliveryResponse])
 def get_alert_deliveries(
     limit: int = 50,
@@ -637,6 +713,52 @@ def _alert_delivery_response(delivery: AlertDelivery) -> AlertDeliveryResponse:
         status=delivery.status,
         error_detail=delivery.error_detail,
         created_at=created_at.isoformat(),
+    )
+
+
+def _alert_summary_response(item: dict[str, object]) -> AlertSummaryResponse:
+    last_attempt_at = item["last_attempt_at"]
+    if isinstance(last_attempt_at, datetime):
+        if last_attempt_at.tzinfo is None:
+            last_attempt_at = last_attempt_at.replace(tzinfo=timezone.utc)
+        last_attempt_at_str = last_attempt_at.isoformat()
+    else:
+        last_attempt_at_str = str(last_attempt_at)
+
+    return AlertSummaryResponse(
+        anomaly_id=item["anomaly_id"],  # type: ignore[arg-type]
+        delivery_id=int(item["delivery_id"]),
+        channel=str(item["channel"]),
+        anomaly_type=str(item["anomaly_type"]),
+        severity=str(item["severity"]),
+        anomaly_status=str(item["anomaly_status"]),
+        source_ip=str(item["source_ip"]),
+        description=str(item["description"]),
+        subject=str(item["subject"]),
+        latest_delivery_status=str(item["latest_delivery_status"]),
+        latest_error=str(item["latest_error"]),
+        delivery_attempts=int(item["delivery_attempts"]),
+        last_attempt_at=last_attempt_at_str,
+        can_retry=bool(item["can_retry"]),
+    )
+
+
+def _alert_history_entry_response(item: dict[str, object]) -> AlertStatusHistoryEntry:
+    created_at = item["created_at"]
+    if isinstance(created_at, datetime):
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at_str = created_at.isoformat()
+    else:
+        created_at_str = str(created_at)
+
+    delivery_id = item.get("delivery_id")
+    return AlertStatusHistoryEntry(
+        event_type=str(item["event_type"]),
+        status=str(item["status"]),
+        detail=str(item["detail"]),
+        created_at=created_at_str,
+        delivery_id=int(delivery_id) if delivery_id is not None else None,
     )
 
 

@@ -105,8 +105,8 @@ def main() -> None:
         render_anomalies(token, me["role"])
     elif page == "Intrusion Analytics":
         render_intrusion_analytics(token)
-    elif page == "Email Alerts":
-        render_email_alerts(token, me["role"])
+    elif page == "Alert Management":
+        render_alert_management(token, me["role"])
     elif page == "User Management":
         render_user_management(token, me)
     elif page == "Audit Log":
@@ -649,24 +649,64 @@ def render_learned_signatures(token: str) -> None:
     st.divider()
 
 
-def render_email_alerts(token: str, role: str) -> None:
-    st.title("Email Alerts")
-    st.caption("Critical anomalies trigger SMTP email alerts and delivery history is stored here.")
+def render_alert_management(token: str, role: str) -> None:
+    st.title("Alert Management")
+    st.caption("Monitor email alert deliveries, review status history, and retry failed notifications.")
 
-    deliveries = api_request("GET", "/api/alerts/delivery", token, params={"limit": 50}).json()
-    sent_count = sum(1 for item in deliveries if item["status"] == "sent")
-    failed_count = sum(1 for item in deliveries if item["status"] == "failed")
+    col_status, col_severity = st.columns(2)
+    with col_status:
+        status_filter = st.selectbox("Delivery status", ["All", "sent", "failed"], key="alert-status-filter")
+    with col_severity:
+        severity_filter = st.selectbox(
+            "Severity",
+            ["All", "high", "medium", "low", "info"],
+            key="alert-severity-filter",
+        )
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Alerts", len(deliveries))
-    col2.metric("Sent", sent_count)
+    filter_by_date = st.checkbox("Filter by date range", value=False, key="alert-filter-by-date")
+    start_date = None
+    end_date = None
+    if filter_by_date:
+        col_from, col_to = st.columns(2)
+        with col_from:
+            start_date = st.date_input("From date", key="alert-start-date")
+        with col_to:
+            end_date = st.date_input("To date", key="alert-end-date")
+
+    if start_date and end_date and start_date > end_date:
+        st.error("From date must be on or before to date.")
+        return
+
+    params: dict[str, object] = {"limit": 100}
+    if status_filter != "All":
+        params["delivery_status"] = status_filter
+    if severity_filter != "All":
+        params["severity"] = severity_filter
+    if start_date:
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        params["end_date"] = end_date.isoformat()
+
+    response = api_request("GET", "/api/alerts", token, params=params)
+    if response.status_code != 200:
+        st.error(format_api_error(response, "Could not load alerts."))
+        return
+
+    alerts = response.json()
+    sent_count = sum(1 for item in alerts if item["latest_delivery_status"] == "sent")
+    failed_count = sum(1 for item in alerts if item["latest_delivery_status"] == "failed")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Alerts", len(alerts))
+    col2.metric("Delivered", sent_count)
     col3.metric("Failed", failed_count)
+    col4.metric("Retryable", sum(1 for item in alerts if item["can_retry"]))
 
     if role == "admin":
-        if st.button("Send Test Email"):
-            response = api_request("POST", "/api/alerts/test-email", token)
-            if response.status_code == 200:
-                result = response.json()
+        if st.button("Send Test Email", key="alert-send-test-email"):
+            test_response = api_request("POST", "/api/alerts/test-email", token)
+            if test_response.status_code == 200:
+                result = test_response.json()
                 if result["status"] == "sent":
                     st.success(f"Test email sent to {result['recipient']}")
                 else:
@@ -675,15 +715,109 @@ def render_email_alerts(token: str, role: str) -> None:
             else:
                 st.error("Could not send test email.")
 
-    if not deliveries:
-        st.info("No email alerts yet. They are sent automatically when high-severity anomalies are detected.")
+    if not alerts:
+        st.info("No alerts found for the selected filters.")
         return
 
-    df = pd.DataFrame(deliveries)
+    df = pd.DataFrame(alerts)
+    df["severity"] = df["severity"].str.upper()
+    df["type_label"] = df["anomaly_type"].str.replace("_", " ").str.title()
+    df["delivery_status"] = df["latest_delivery_status"].str.upper()
+    df["review_status"] = df["anomaly_status"].str.replace("_", " ").str.title()
     st.dataframe(
-        df[["created_at", "status", "recipient", "subject", "error_detail", "anomaly_id"]],
+        df[
+            [
+                "last_attempt_at",
+                "severity",
+                "type_label",
+                "source_ip",
+                "delivery_status",
+                "review_status",
+                "delivery_attempts",
+                "subject",
+            ]
+        ].rename(
+            columns={
+                "last_attempt_at": "Last Attempt",
+                "severity": "Severity",
+                "type_label": "Type",
+                "source_ip": "Source IP",
+                "delivery_status": "Delivery",
+                "review_status": "Review",
+                "delivery_attempts": "Attempts",
+                "subject": "Subject",
+            }
+        ),
         use_container_width=True,
+        hide_index=True,
     )
+
+    st.subheader("Alert Details")
+    for alert in alerts:
+        severity = alert["severity"].upper()
+        type_label = alert["anomaly_type"].replace("_", " ").title()
+        title = f"[{severity}] {type_label}"
+        if alert["source_ip"]:
+            title = f"{title} — {alert['source_ip']}"
+        title = f"{title} ({alert['latest_delivery_status'].upper()})"
+
+        with st.expander(title):
+            st.write(alert["description"])
+            st.caption(
+                f"Subject: {alert['subject']} | Attempts: {alert['delivery_attempts']} | "
+                f"Last attempt: {alert['last_attempt_at']}"
+            )
+            if alert["latest_error"]:
+                st.error(alert["latest_error"])
+
+            history_params: dict[str, object] = {}
+            if alert["anomaly_id"] is not None:
+                history_params["anomaly_id"] = alert["anomaly_id"]
+            else:
+                history_params["delivery_id"] = alert["delivery_id"]
+
+            history_response = api_request("GET", "/api/alerts/history", token, params=history_params)
+            if history_response.status_code == 200:
+                history = history_response.json()
+                if history:
+                    history_df = pd.DataFrame(history)
+                    history_df["event_label"] = history_df["event_type"].map(
+                        {"delivery": "Email delivery", "review": "Anomaly review"}
+                    )
+                    history_df["status_label"] = history_df["status"].str.replace("_", " ").str.title()
+                    st.dataframe(
+                        history_df[["created_at", "event_label", "status_label", "detail"]].rename(
+                            columns={
+                                "created_at": "Time",
+                                "event_label": "Event",
+                                "status_label": "Status",
+                                "detail": "Details",
+                            }
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("No status history yet.")
+            else:
+                st.warning(format_api_error(history_response, "Could not load status history."))
+
+            if alert["can_retry"] and role in {"admin", "analyst"}:
+                if st.button("Retry Failed Email", key=f"retry-alert-{alert['delivery_id']}"):
+                    retry_response = api_request(
+                        "POST",
+                        f"/api/alerts/delivery/{alert['delivery_id']}/retry",
+                        token,
+                    )
+                    if retry_response.status_code == 200:
+                        result = retry_response.json()
+                        if result["status"] == "sent":
+                            st.success(f"Email resent successfully to {result['recipient']}")
+                        else:
+                            st.error(f"Retry failed: {result['error_detail']}")
+                        st.rerun()
+                    else:
+                        st.error(format_api_error(retry_response, "Could not retry email delivery."))
 
 
 def render_reports(token: str, me: dict) -> None:

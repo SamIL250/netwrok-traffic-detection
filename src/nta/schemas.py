@@ -193,6 +193,31 @@ class AlertDeliveryResponse(BaseModel):
     created_at: str
 
 
+class AlertSummaryResponse(BaseModel):
+    anomaly_id: int | None
+    delivery_id: int
+    channel: str
+    anomaly_type: str
+    severity: str
+    anomaly_status: str
+    source_ip: str
+    description: str
+    subject: str
+    latest_delivery_status: str
+    latest_error: str
+    delivery_attempts: int
+    last_attempt_at: str
+    can_retry: bool
+
+
+class AlertStatusHistoryEntry(BaseModel):
+    event_type: str
+    status: str
+    detail: str
+    created_at: str
+    delivery_id: int | None
+
+
 class AuditLogResponse(BaseModel):
     id: int
     username: str | None

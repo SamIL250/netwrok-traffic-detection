@@ -106,6 +106,7 @@ def main() -> None:
     ]
     if me["role"] == "admin":
         pages.insert(-1, "User Management")
+        pages.insert(-1, "Audit Log")
     page = st.sidebar.radio("Go to", pages)
     if st.sidebar.button("Logout"):
         clear_session()
@@ -125,6 +126,8 @@ def main() -> None:
         render_email_alerts(token, me["role"])
     elif page == "User Management":
         render_user_management(token, me)
+    elif page == "Audit Log":
+        render_audit_logs(token, me)
     elif page == "Change Password":
         render_change_password(token)
     else:
@@ -251,6 +254,19 @@ def render_network_scan(token: str, role: str) -> None:
                 st.error("Could not authorize device.")
 
 
+def _log_traffic_log_export() -> None:
+    token = st.session_state.get("token")
+    details = st.session_state.get("traffic_export_audit_details")
+    if not token or not details:
+        return
+    api_request(
+        "POST",
+        "/api/audit/client-events",
+        token,
+        json={"resource": "traffic_logs", "details": details},
+    )
+
+
 def render_traffic_logs(token: str) -> None:
     st.title("Traffic Logs")
     st.caption("Filter logs by source IP and/or date range. CSV export uses the current filters.")
@@ -295,18 +311,104 @@ def render_traffic_logs(token: str) -> None:
 
     filter_parts: list[str] = []
     if src_ip:
-        filter_parts.append(f"ip-{src_ip.strip()}")
+        filter_parts.append(f"source IP {src_ip.strip()}")
     if start_date:
-        filter_parts.append(f"from-{start_date.isoformat()}")
+        filter_parts.append(f"from {start_date.isoformat()}")
     if end_date:
-        filter_parts.append(f"to-{end_date.isoformat()}")
-    file_suffix = "_".join(filter_parts) if filter_parts else "all"
+        filter_parts.append(f"to {end_date.isoformat()}")
+    filter_summary = ", ".join(filter_parts) if filter_parts else "no filters"
+    st.session_state.traffic_export_audit_details = f"Exported {len(df)} traffic log rows ({filter_summary})"
+
+    file_name_parts: list[str] = []
+    if src_ip:
+        file_name_parts.append(f"ip-{src_ip.strip()}")
+    if start_date:
+        file_name_parts.append(f"from-{start_date.isoformat()}")
+    if end_date:
+        file_name_parts.append(f"to-{end_date.isoformat()}")
+    file_suffix = "_".join(file_name_parts) if file_name_parts else "all"
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
     st.download_button(
         "Download CSV",
         csv_buffer.getvalue(),
         file_name=f"traffic_logs_{file_suffix}.csv",
+        mime="text/csv",
+        on_click=_log_traffic_log_export,
+    )
+
+
+def render_audit_logs(token: str, me: dict) -> None:
+    if me["role"] != "admin":
+        st.error("Only administrators can view audit logs.")
+        return
+
+    st.title("Audit Log")
+    st.caption("Track sign-ins, anomaly reviews, exports, and other administrative actions.")
+
+    actions_response = api_request("GET", "/api/audit/actions", token)
+    action_options = ["All actions"]
+    if actions_response.status_code == 200:
+        action_options.extend(actions_response.json())
+
+    col_action, col_user = st.columns(2)
+    with col_action:
+        selected_action = st.selectbox("Action", action_options)
+    with col_user:
+        username = st.text_input("Username (optional)")
+
+    filter_by_date = st.checkbox("Filter by date range", value=False, key="audit-filter-by-date")
+    start_date = None
+    end_date = None
+    if filter_by_date:
+        col_from, col_to = st.columns(2)
+        with col_from:
+            start_date = st.date_input("From date", key="audit-start-date")
+        with col_to:
+            end_date = st.date_input("To date", key="audit-end-date")
+
+    if start_date and end_date and start_date > end_date:
+        st.error("From date must be on or before to date.")
+        return
+
+    params: dict[str, object] = {"limit": 200}
+    if selected_action != "All actions":
+        params["action"] = selected_action
+    if username.strip():
+        params["username"] = username.strip()
+    if start_date:
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        params["end_date"] = end_date.isoformat()
+
+    response = api_request("GET", "/api/audit/logs", token, params=params)
+    if response.status_code != 200:
+        st.error(format_api_error(response, "Could not load audit logs."))
+        return
+
+    logs = response.json()
+    if not logs:
+        st.info("No audit entries found for the selected filters.")
+        return
+
+    df = pd.DataFrame(logs)
+    df["action_label"] = df["action"].str.replace("_", " ").str.title()
+    df["username"] = df["username"].fillna("system")
+    st.caption(f"Showing {len(df)} audit entries")
+    st.dataframe(
+        df[["created_at", "username", "action_label", "details"]].rename(
+            columns={"created_at": "Time", "username": "User", "action_label": "Action", "details": "Details"}
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    csv_buffer = io.StringIO()
+    df[["created_at", "username", "action", "details"]].to_csv(csv_buffer, index=False)
+    st.download_button(
+        "Download Audit Log CSV",
+        csv_buffer.getvalue(),
+        file_name="audit_log.csv",
         mime="text/csv",
     )
 

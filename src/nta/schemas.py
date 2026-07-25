@@ -153,3 +153,16 @@ class AlertDeliveryResponse(BaseModel):
     error_detail: str
     created_at: str
 
+
+class AuditLogResponse(BaseModel):
+    id: int
+    username: str | None
+    action: str
+    details: str
+    created_at: str
+
+
+class ClientAuditEventRequest(BaseModel):
+    resource: str
+    details: str = ""
+

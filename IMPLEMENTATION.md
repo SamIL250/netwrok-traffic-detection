@@ -27,7 +27,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] **Email alerts end-to-end** — SMTP configured, test delivery, alert status in dashboard
 - [x] **User management UI** — create users, assign roles, disable accounts, force password change (API exists, UI does not)
 - [x] **Traffic log filters** — add date range filtering (PDF mentions date + IP; currently IP only)
-- [ ] **Audit log page** — who logged in, reviewed anomalies, exported data (data is stored, no UI)
+- [x] **Audit log page** — who logged in, reviewed anomalies, exported data (data is stored, no UI)
 
 ---
 

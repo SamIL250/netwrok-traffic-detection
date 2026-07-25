@@ -23,7 +23,7 @@ from nta.auth import (
 )
 from nta.config import settings
 from nta.database import SessionLocal, get_db
-from nta.detection import apply_feedback
+from nta.detection import apply_feedback, signature_pattern_summary
 from nta.detection_service import run_detection_job
 from nta.network_service import (
     authorize_discovered_device,
@@ -33,7 +33,7 @@ from nta.network_service import (
     remove_known_device,
     run_network_scan,
 )
-from nta.models import AlertDelivery, Anomaly, AnomalyFeedback, AnomalyStatus, AuditLog, DiscoveredDevice, KnownDevice, NetworkScan, Role, TrafficLog, User
+from nta.models import AlertDelivery, Anomaly, AnomalyFeedback, AnomalyStatus, AuditLog, DiscoveredDevice, IntrusionSignature, KnownDevice, NetworkScan, Role, TrafficLog, User
 from nta.password_strength import analyze_password_strength
 from nta.report_service import format_report_period, generate_network_report_pdf
 from nta.schemas import (
@@ -44,6 +44,8 @@ from nta.schemas import (
     ClientAuditEventRequest,
     DashboardStats,
     DiscoveredDeviceResponse,
+    IntrusionSignatureResponse,
+    IntrusionSignatureUpdateRequest,
     KnownDeviceCreate,
     KnownDeviceResponse,
     NetworkScanRequest,
@@ -386,10 +388,52 @@ def review_anomaly(
             notes=payload.notes,
         )
     )
-    apply_feedback(db, anomaly_id, payload.classification)
+    feedback_result = apply_feedback(db, anomaly_id, payload.classification)
     db.refresh(anomaly)
-    log_audit(db, current_user.id, "review_anomaly", f"Anomaly {anomaly_id} marked {payload.classification}")
+    audit_details = f"Anomaly {anomaly_id} marked {payload.classification}"
+    if feedback_result.signature_action == "learned" and feedback_result.signature is not None:
+        audit_details += f"; learned signature #{feedback_result.signature.id}"
+    elif feedback_result.signature_action == "disabled" and feedback_result.signature is not None:
+        audit_details += f"; disabled signature #{feedback_result.signature.id}"
+    log_audit(db, current_user.id, "review_anomaly", audit_details)
     return _anomaly_response(anomaly)
+
+
+@app.get("/api/detection/signatures", response_model=list[IntrusionSignatureResponse])
+def list_intrusion_signatures(
+    enabled_only: bool = False,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "analyst")),
+) -> list[IntrusionSignatureResponse]:
+    query = db.query(IntrusionSignature).order_by(IntrusionSignature.updated_at.desc())
+    if enabled_only:
+        query = query.filter(IntrusionSignature.enabled.is_(True))
+    signatures = query.limit(200).all()
+    return [_intrusion_signature_response(signature) for signature in signatures]
+
+
+@app.patch("/api/detection/signatures/{signature_id}", response_model=IntrusionSignatureResponse)
+def update_intrusion_signature(
+    signature_id: int,
+    payload: IntrusionSignatureUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> IntrusionSignatureResponse:
+    signature = db.query(IntrusionSignature).filter(IntrusionSignature.id == signature_id).first()
+    if signature is None:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    signature.enabled = payload.enabled
+    db.commit()
+    db.refresh(signature)
+    action = "enable_signature" if payload.enabled else "disable_signature"
+    log_audit(
+        db,
+        current_user.id,
+        action,
+        f"Signature #{signature.id} ({signature.anomaly_type}) set enabled={payload.enabled}",
+    )
+    return _intrusion_signature_response(signature)
 
 
 @app.get("/api/alerts/delivery", response_model=list[AlertDeliveryResponse])
@@ -668,4 +712,29 @@ def _audit_log_response(log: AuditLog, username: str | None) -> AuditLogResponse
         action=log.action,
         details=log.details,
         created_at=created_at.isoformat(),
+    )
+
+
+def _intrusion_signature_response(signature: IntrusionSignature) -> IntrusionSignatureResponse:
+    created_at = signature.created_at
+    updated_at = signature.updated_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    return IntrusionSignatureResponse(
+        id=signature.id,
+        anomaly_type=signature.anomaly_type,
+        source_ip=signature.source_ip,
+        dst_ip=signature.dst_ip,
+        dst_port=signature.dst_port,
+        protocol=signature.protocol,
+        encrypted=signature.encrypted,
+        learned_from_anomaly_id=signature.learned_from_anomaly_id,
+        match_count=signature.match_count,
+        confirmation_count=signature.confirmation_count,
+        enabled=signature.enabled,
+        pattern_summary=signature_pattern_summary(signature),
+        created_at=created_at.isoformat(),
+        updated_at=updated_at.isoformat(),
     )

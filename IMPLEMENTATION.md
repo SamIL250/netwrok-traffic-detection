@@ -12,7 +12,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 - [x] Traffic log capture (sample agent + continuous daemon + basic live capture)
 - [x] Dashboard with stats, charts, traffic logs, CSV export
 - [x] Rule-based anomaly detection (unencrypted traffic, bursts, port scans) with automatic runs
-- [x] Admin review of anomalies + simple retraining (threshold adjustment)
+- [x] Admin review of anomalies + retraining (threshold adjustment + signature learning)
 - [x] Password strength checker
 - [x] Email alerts via SMTP with delivery logging and dashboard status view
 
@@ -34,7 +34,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 ## Medium Priority (Match the PDF Better)
 
 - [x] **PDF report export** — generate downloadable reports for admins
-- [ ] **Stronger retraining model** — today only threshold tweaks; add signature/rule learning from confirmed intrusions
+- [x] **Stronger retraining model** — today only threshold tweaks; add signature/rule learning from confirmed intrusions
 - [ ] **Intrusion analytics charts** — breakdown by type (brute force, port scan, unencrypted), trends over time
 - [ ] **Alert management module** — list alerts, severity, status history, retry failed email
 - [ ] **Password reset / change password flow** — especially replace default `admin` password safely
@@ -94,7 +94,7 @@ Reference checklist for building the project. Compare against the PDF requiremen
 | Email alerts | Done (SMTP + dashboard) |
 | Traffic logs (filter + export) | Done (IP + date range + CSV) |
 | Network device scan | Done (dashboard + DB + CLI via agent) |
-| Retraining / feedback model | Partial (threshold only) |
+| Retraining / feedback model | Done (threshold tuning + signature learning) |
 | PDF reporting | Done (admin dashboard + API) |
 | User management | Done (API + dashboard) |
 

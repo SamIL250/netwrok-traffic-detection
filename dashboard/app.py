@@ -418,6 +418,10 @@ def render_audit_logs(token: str, me: dict) -> None:
 
 def render_anomalies(token: str, role: str) -> None:
     st.title("Anomaly Alerts")
+
+    if role in {"admin", "analyst"}:
+        render_learned_signatures(token)
+
     anomalies = api_request("GET", "/api/anomalies", token).json()
 
     if not anomalies:
@@ -440,8 +444,10 @@ def render_anomalies(token: str, role: str) -> None:
                         json={"classification": "confirmed", "notes": notes},
                     )
                     if response.status_code == 200:
-                        st.success("Marked as confirmed")
+                        st.success("Marked as confirmed. A reusable detection signature was learned.")
                         st.rerun()
+                    else:
+                        st.error(format_api_error(response, "Could not submit review."))
                 if reject_col.button("Mark False Positive", key=f"reject-{anomaly['id']}"):
                     response = api_request(
                         "POST",
@@ -450,8 +456,91 @@ def render_anomalies(token: str, role: str) -> None:
                         json={"classification": "false_positive", "notes": notes},
                     )
                     if response.status_code == 200:
-                        st.success("Marked as false positive")
+                        st.success("Marked as false positive. Matching signature disabled and threshold relaxed.")
                         st.rerun()
+                    else:
+                        st.error(format_api_error(response, "Could not submit review."))
+
+
+def render_learned_signatures(token: str) -> None:
+    st.subheader("Learned Intrusion Signatures")
+    st.caption(
+        "Confirming an anomaly teaches the system a reusable pattern. "
+        "False positives disable matching signatures and relax global thresholds."
+    )
+
+    response = api_request("GET", "/api/detection/signatures", token)
+    if response.status_code != 200:
+        st.warning(format_api_error(response, "Could not load learned signatures."))
+        return
+
+    signatures = response.json()
+    if not signatures:
+        st.info("No learned signatures yet. Confirm an anomaly to teach the system a pattern.")
+        st.divider()
+        return
+
+    df = pd.DataFrame(signatures)
+    df["status"] = df["enabled"].map({True: "Active", False: "Disabled"})
+    st.dataframe(
+        df[
+            [
+                "anomaly_type",
+                "pattern_summary",
+                "status",
+                "confirmation_count",
+                "match_count",
+                "learned_from_anomaly_id",
+                "updated_at",
+            ]
+        ].rename(
+            columns={
+                "anomaly_type": "Type",
+                "pattern_summary": "Pattern",
+                "confirmation_count": "Confirmations",
+                "match_count": "Matches",
+                "learned_from_anomaly_id": "Learned From",
+                "updated_at": "Updated",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    labels = [
+        f"#{item['id']} — {item['anomaly_type']} ({item['pattern_summary']})"
+        for item in signatures
+    ]
+    selected_index = st.selectbox(
+        "Manage signature",
+        range(len(signatures)),
+        format_func=lambda index: labels[index],
+        key="signature-manage-select",
+    )
+    selected = signatures[selected_index]
+    signature_enabled = st.checkbox(
+        "Signature enabled",
+        value=selected["enabled"],
+        key=f"signature-enabled-{selected['id']}",
+    )
+
+    if st.button("Save Signature Setting", key=f"save-signature-{selected['id']}"):
+        if signature_enabled == selected["enabled"]:
+            st.warning("No changes to save.")
+        else:
+            update_response = api_request(
+                "PATCH",
+                f"/api/detection/signatures/{selected['id']}",
+                token,
+                json={"enabled": signature_enabled},
+            )
+            if update_response.status_code == 200:
+                st.success("Signature updated.")
+                st.rerun()
+            else:
+                st.error(format_api_error(update_response, "Could not update signature."))
+
+    st.divider()
 
 
 def render_email_alerts(token: str, role: str) -> None:

@@ -166,3 +166,24 @@ class ClientAuditEventRequest(BaseModel):
     resource: str
     details: str = ""
 
+
+class IntrusionSignatureResponse(BaseModel):
+    id: int
+    anomaly_type: str
+    source_ip: str | None
+    dst_ip: str | None
+    dst_port: int | None
+    protocol: str | None
+    encrypted: bool | None
+    learned_from_anomaly_id: int | None
+    match_count: int
+    confirmation_count: int
+    enabled: bool
+    pattern_summary: str
+    created_at: str
+    updated_at: str
+
+
+class IntrusionSignatureUpdateRequest(BaseModel):
+    enabled: bool
+

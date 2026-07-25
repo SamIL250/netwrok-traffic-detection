@@ -111,6 +111,28 @@ class DetectionRule(Base):
     )
 
 
+class IntrusionSignature(Base):
+    __tablename__ = "intrusion_signatures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    anomaly_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    source_ip: Mapped[str | None] = mapped_column(String(45), index=True)
+    dst_ip: Mapped[str | None] = mapped_column(String(45))
+    dst_port: Mapped[int | None] = mapped_column(Integer)
+    protocol: Mapped[str | None] = mapped_column(String(20))
+    encrypted: Mapped[bool | None] = mapped_column(Boolean)
+    learned_from_anomaly_id: Mapped[int | None] = mapped_column(ForeignKey("anomalies.id"))
+    match_count: Mapped[int] = mapped_column(Integer, default=0)
+    confirmation_count: Mapped[int] = mapped_column(Integer, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    learned_from: Mapped["Anomaly | None"] = relationship()
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

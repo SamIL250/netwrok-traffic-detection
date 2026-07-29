@@ -4,7 +4,7 @@ A Python-based network monitoring system for educational institutions. It captur
 
 For the full feature backlog, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
-**Windows 11:** see [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md).
+**Windows 11:** see [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md) (use `start.ps1` on PowerShell, `start.sh` in Git Bash only).
 
 ---
 

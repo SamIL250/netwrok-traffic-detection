@@ -38,29 +38,77 @@ cd network-traffic-analysis
 
 ### Option B — ZIP
 
-Extract the project folder, then open PowerShell in that directory.
+Extract the project folder, then open PowerShell **inside that folder** (see below).
+
+### Open PowerShell in the project folder (important)
+
+Your terminal must **not** stay in `C:\WINDOWS\system32`. Use one of these:
+
+**From File Explorer**
+
+1. Open the `network-traffic-analysis` folder.
+2. Click the address bar, type `powershell`, press Enter.
+
+**From VS Code / Cursor**
+
+1. Open the project folder: **File → Open Folder** → select `network-traffic-analysis`.
+2. Open the integrated terminal: **Terminal → New Terminal** (`` Ctrl+` ``).
+
+**Check you are in the right place** — the prompt should end with your project path, for example:
+
+```text
+PS C:\Users\YourName\development\network-traffic-analysis>
+```
+
+Verify the project files exist:
+
+```powershell
+dir
+```
+
+You should see `requirements.txt`, `dashboard`, `backend`, and `.env.example`.
 
 ---
 
 ## 2. Create a virtual environment
 
-In **PowerShell** from the project root:
+In **PowerShell**, make sure you are in the **project root** (not `C:\WINDOWS\system32`), then run:
 
 ```powershell
+cd C:\Users\YourName\path\to\network-traffic-analysis
 py -m venv .venv
+```
+
+Confirm the venv was created:
+
+```powershell
+dir .venv\Scripts\Activate.ps1
+```
+
+If that file exists, activate the environment:
+
+```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-If activation is blocked:
+If activation is blocked by execution policy, run this **once**, then try activate again:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\.venv\Scripts\Activate.ps1
 ```
 
-Your prompt should show `(.venv)`.
+Alternative activation syntax (same result):
 
----
+```powershell
+& .\.venv\Scripts\Activate.ps1
+```
+
+Your prompt should show `(.venv)` at the start, for example:
+
+```text
+(.venv) PS C:\Users\YourName\...\network-traffic-analysis>
+```
 
 ## 3. Install dependencies
 
@@ -107,6 +155,21 @@ $env:PYTHONPATH = "src"
 python scripts\init_db.py
 ```
 
+**Before running**, confirm `.env` exists and has a real Neon URL (not the placeholder):
+
+```powershell
+dir .env
+Select-String -Path .env -Pattern "^DATABASE_URL="
+```
+
+You should see something like:
+
+```text
+DATABASE_URL=postgresql+psycopg://...@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
+```
+
+If you only see `localhost` in the error, `.env` is missing or `DATABASE_URL` was never set. Neon gives `postgresql://` — change it to **`postgresql+psycopg://`**.
+
 Default admin login:
 
 | Field    | Value       |
@@ -120,9 +183,52 @@ You will be prompted to change this password on first sign-in.
 
 ## 6. Run the application
 
-### Option A — Git Bash (recommended)
+### Important: `.sh` files do not run in PowerShell
 
-Open **Git Bash** in the project folder:
+| What you tried | What happens |
+|----------------|--------------|
+| Double-click `start.sh` | Windows asks which app should open the file |
+| `.\start.sh` in **PowerShell** | Same — PowerShell does not run Bash scripts |
+| `./start.sh` in **Git Bash** | Works |
+
+On Windows, use **`start.ps1`** in PowerShell (below), or use **Git Bash** for `start.sh`.
+
+---
+
+### Option A — PowerShell (recommended on Windows)
+
+Open **PowerShell in the project folder**, activate the venv, then:
+
+```powershell
+cd C:\Users\Maggi\Desktop\network-traffic-analysis
+.\.venv\Scripts\Activate.ps1
+.\start.ps1
+```
+
+Other commands:
+
+```powershell
+.\start.ps1 stop
+.\start.ps1 status
+.\start.ps1 restart
+.\start.ps1 logs
+.\start.ps1 init-db
+```
+
+If script execution is blocked:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+.\start.ps1
+```
+
+Logs are written to `.run\` (`api.log`, `dashboard.log`, `agent.log`).
+
+---
+
+### Option B — Git Bash
+
+If you installed **Git for Windows**, open **Git Bash** in the project folder:
 
 ```bash
 ./start.sh
@@ -138,9 +244,9 @@ Other commands:
 ./start.sh init-db
 ```
 
-Logs are written to `.run\` (`api.log`, `dashboard.log`, `agent.log`).
+---
 
-### Option B — PowerShell (manual, three terminals)
+### Option C — PowerShell (manual, three terminals)
 
 Open **three PowerShell windows**. In each one:
 
@@ -202,6 +308,10 @@ curl http://127.0.0.1:8000/health
 
 | Topic | Guidance |
 |-------|----------|
+| **`Activate.ps1` is not recognized** | You are in the wrong folder (often `C:\WINDOWS\system32`). Run `cd` to the project directory first. Confirm with `dir .venv\Scripts\Activate.ps1`. |
+| **Windows asks how to open `.sh` file** | Do not double-click `start.sh`. Use `.\start.ps1` in PowerShell, or `./start.sh` in Git Bash only. |
+| **Database connection to `localhost` failed** | Set `DATABASE_URL` in `.env` to your **Neon** cloud URL (`postgresql+psycopg://...`), not a local PostgreSQL install. |
+| **`.venv` folder missing** | Run `py -m venv .venv` from the project root before activating. |
 | **Live packet capture** | Requires Npcap and an elevated (Administrator) terminal. Windows interfaces are often named like `\Device\NPF_{...}`, not `eth0`. Use sample mode for development. |
 | **Firewall** | Allow Python through Windows Firewall for ports **8000** (API) and **8501** (dashboard) if connections fail. |
 | **`No module named 'nta'`** | Set `$env:PYTHONPATH = "src"` before running Python commands. |

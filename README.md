@@ -4,6 +4,8 @@ A Python-based network monitoring system for educational institutions. It captur
 
 For the full feature backlog, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
+**Windows 11:** see [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md).
+
 ---
 
 ## Prerequisites

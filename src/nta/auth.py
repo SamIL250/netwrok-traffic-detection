@@ -61,7 +61,13 @@ def get_current_user(
     if user is None:
         raise credentials_exception
 
-    if not isinstance(token_version, int) or token_version != user.token_version:
+    if not isinstance(token_version, int):
+        try:
+            token_version = int(token_version)
+        except (TypeError, ValueError) as exc:
+            raise session_revoked_exception from exc
+
+    if token_version != user.token_version:
         raise session_revoked_exception
 
     return user

@@ -23,7 +23,7 @@ from rbac import (
     can_view_audit_logs,
     render_role_banner,
 )
-from session import clear_session, get_cookie_manager, get_stored_token, logout_session, persist_session
+from session import clear_session, get_stored_token, logout_session
 from nta.config import settings
 
 st.set_page_config(page_title="Network Traffic Monitor", layout="wide")
@@ -82,21 +82,18 @@ def require_login() -> str:
     if token:
         return token
 
-    token = render_login_screen(login)
-    if token:
-        persist_session(token)
-        st.rerun()
-
+    render_login_screen(login)
     st.stop()
 
 
 def main() -> None:
-    get_cookie_manager()
     token = require_login()
 
     me_response = api_request("GET", "/api/auth/me", token)
     if me_response.status_code == 401:
         clear_session()
+        st.session_state.pop(NAV_PAGE_KEY, None)
+        st.warning("Your session expired. Sign in again.")
         st.rerun()
     if me_response.status_code != 200:
         st.error("Could not verify your session. Check that the API is running.")

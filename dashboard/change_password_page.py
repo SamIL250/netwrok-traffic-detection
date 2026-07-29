@@ -3,6 +3,8 @@ from collections.abc import Callable
 import requests
 import streamlit as st
 
+from session import clear_session
+
 CHANGE_PASSWORD_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
@@ -329,10 +331,11 @@ def render_change_password_screen(
                     json={"current_password": current_password, "new_password": new_password},
                 )
                 if response.status_code == 200:
+                    clear_session()
                     if forced:
-                        st.success("Password updated. Redirecting to the dashboard...")
+                        st.success("Password updated. Sign in again with your new password.")
                     else:
-                        st.success("Password updated successfully.")
+                        st.success("Password updated. Sign in again with your new password.")
                     st.rerun()
                 else:
                     st.error(format_api_error(response, "Could not update password."))

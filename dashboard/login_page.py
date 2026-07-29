@@ -165,9 +165,13 @@ LOGIN_BRAND_HTML = """
 """
 
 
-def render_login_screen(login_fn: Callable[[str, str], str | None]) -> str | None:
+def render_login_screen(login_fn: Callable[[str, str], str | None]) -> None:
     st.markdown('<div class="login-page-active"></div>', unsafe_allow_html=True)
     st.markdown(LOGIN_CSS, unsafe_allow_html=True)
+
+    login_error = st.session_state.pop("login_error", None)
+    if login_error:
+        st.error(login_error)
 
     _, center, _ = st.columns([1, 1.05, 1])
     with center:
@@ -187,12 +191,16 @@ def render_login_screen(login_fn: Callable[[str, str], str | None]) -> str | Non
 
         if submitted:
             if not username or not password:
-                st.error("Enter both username and password.")
+                st.session_state.login_error = "Enter both username and password."
+                st.rerun()
             else:
                 token = login_fn(username, password)
                 if token:
-                    return str(token)
-                st.error("Invalid username or password.")
+                    st.session_state.token = token
+                    st.rerun()
+                else:
+                    st.session_state.login_error = "Invalid username or password."
+                    st.rerun()
 
         st.markdown(
             """
@@ -203,5 +211,3 @@ def render_login_screen(login_fn: Callable[[str, str], str | None]) -> str | Non
             """,
             unsafe_allow_html=True,
         )
-
-    return None

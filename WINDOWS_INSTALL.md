@@ -22,6 +22,17 @@ During Python setup, enable:
 - **Add python.exe to PATH**
 - **Install pip**
 
+After installing, **disable the Microsoft Store Python shortcuts** (they hijack the `python` command):
+
+1. Open **Settings → Apps → Advanced app settings → App execution aliases**
+2. Turn **Off** both **python.exe** and **python3.exe**
+
+On Windows, prefer the **`py`** launcher until the virtual environment is active:
+
+```powershell
+py --version
+```
+
 For local development on Windows, use **`AGENT_MODE=sample`** (no Npcap required).
 
 ---
@@ -79,10 +90,12 @@ cd C:\Users\YourName\path\to\network-traffic-analysis
 py -m venv .venv
 ```
 
+If `py` is also not found, install Python from [python.org/downloads](https://www.python.org/downloads/) first, then retry.
+
 Confirm the venv was created:
 
 ```powershell
-dir .venv\Scripts\Activate.ps1
+dir .venv\Scripts\python.exe
 ```
 
 If that file exists, activate the environment:
@@ -152,8 +165,10 @@ With the virtual environment active:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python scripts\init_db.py
+.\.venv\Scripts\python.exe scripts\init_db.py
 ```
+
+Use `.\.venv\Scripts\python.exe` if bare `python` still opens the Microsoft Store.
 
 **Before running**, confirm `.env` exists and has a real Neon URL (not the placeholder):
 
@@ -234,6 +249,10 @@ If you installed **Git for Windows**, open **Git Bash** in the project folder:
 ./start.sh
 ```
 
+The start script uses `.venv/Scripts/python.exe` on Windows (not system `python`).
+
+If `./start.sh` exits after "Waiting for API..." and `api.log` says **Python was not found**, pull the latest code or use **`start.ps1`** in PowerShell instead.
+
 Other commands:
 
 ```bash
@@ -308,6 +327,8 @@ curl http://127.0.0.1:8000/health
 
 | Topic | Guidance |
 |-------|----------|
+| **Git Bash: API log says Python not found** | Old `run.sh` looked for Linux venv paths. Update the repo, or use `.\start.ps1` in PowerShell. |
+| **`Python was not found` / opens Microsoft Store** | Install Python from [python.org](https://www.python.org/downloads/) (not the Store). Turn off **App execution aliases** for `python.exe` and `python3.exe`. Use `py --version`, then `py -m venv .venv`, or call `.\.venv\Scripts\python.exe` directly. |
 | **`Activate.ps1` is not recognized** | You are in the wrong folder (often `C:\WINDOWS\system32`). Run `cd` to the project directory first. Confirm with `dir .venv\Scripts\Activate.ps1`. |
 | **Windows asks how to open `.sh` file** | Do not double-click `start.sh`. Use `.\start.ps1` in PowerShell, or `./start.sh` in Git Bash only. |
 | **Database connection to `localhost` failed** | Set `DATABASE_URL` in `.env` to your **Neon** cloud URL (`postgresql+psycopg://...`), not a local PostgreSQL install. |

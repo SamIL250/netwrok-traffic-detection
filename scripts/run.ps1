@@ -20,10 +20,23 @@ $AgentLog = Join-Path $RunDir "agent.log"
 
 $Python = Join-Path $RootDir ".venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) {
-    $Python = (Get-Command python -ErrorAction SilentlyContinue).Source
-    if (-not $Python) {
-        Write-Error "Python not found. Create the venv first: py -m venv .venv"
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        Write-Error @"
+Python virtual environment not found at .venv
+
+Create it from the project folder:
+  py -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  pip install -r requirements.txt
+"@
     }
+    Write-Error @"
+Python not found.
+
+Install Python from https://www.python.org/downloads/ (enable Add to PATH).
+Then disable App execution aliases for python.exe and python3.exe in Windows Settings.
+"@
 }
 
 Set-Location $RootDir

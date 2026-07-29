@@ -12,10 +12,36 @@ API_LOG="${RUN_DIR}/api.log"
 DASHBOARD_LOG="${RUN_DIR}/dashboard.log"
 AGENT_LOG="${RUN_DIR}/agent.log"
 
-PYTHON="${ROOT_DIR}/.venv/bin/python3"
-if [[ ! -x "${PYTHON}" ]]; then
-  PYTHON="$(command -v python3)"
-fi
+resolve_python() {
+  local candidate
+  local candidates=(
+    "${ROOT_DIR}/.venv/Scripts/python.exe"
+    "${ROOT_DIR}/.venv/Scripts/python"
+    "${ROOT_DIR}/.venv/bin/python3"
+    "${ROOT_DIR}/.venv/bin/python"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "${candidate}" ]]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+
+  cat >&2 <<EOF
+Python virtual environment not found.
+
+Create it from the project folder:
+  Windows:  py -m venv .venv
+  Linux:    python3 -m venv .venv
+
+Then install dependencies:
+  pip install -r requirements.txt
+EOF
+  exit 1
+}
+
+PYTHON="$(resolve_python)"
 
 cd "${ROOT_DIR}"
 mkdir -p "${RUN_DIR}"
@@ -78,6 +104,7 @@ wait_for_api() {
     sleep 1
   done
   echo "API did not become ready in time. Check ${API_LOG}"
+  tail -n 20 "${API_LOG}" 2>/dev/null || true
   return 1
 }
 

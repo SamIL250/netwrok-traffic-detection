@@ -327,6 +327,7 @@ curl http://127.0.0.1:8000/health
 
 | Topic | Guidance |
 |-------|----------|
+| **Git Bash: `No module named 'nta'` in api.log** | Update the repo (fixed `PYTHONPATH` for Windows). Or use `.\start.ps1` in PowerShell. |
 | **Git Bash: API log says Python not found** | Old `run.sh` looked for Linux venv paths. Update the repo, or use `.\start.ps1` in PowerShell. |
 | **`Python was not found` / opens Microsoft Store** | Install Python from [python.org](https://www.python.org/downloads/) (not the Store). Turn off **App execution aliases** for `python.exe` and `python3.exe`. Use `py --version`, then `py -m venv .venv`, or call `.\.venv\Scripts\python.exe` directly. |
 | **`Activate.ps1` is not recognized** | You are in the wrong folder (often `C:\WINDOWS\system32`). Run `cd` to the project directory first. Confirm with `dir .venv\Scripts\Activate.ps1`. |

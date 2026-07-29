@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="${ROOT_DIR}/.run"
-export PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}"
 
 API_PID="${RUN_DIR}/api.pid"
 DASHBOARD_PID="${RUN_DIR}/dashboard.pid"
@@ -45,6 +44,9 @@ PYTHON="$(resolve_python)"
 
 cd "${ROOT_DIR}"
 mkdir -p "${RUN_DIR}"
+
+# Relative path works on Linux and Windows (Git Bash + python.exe).
+export PYTHONPATH="src"
 
 is_running() {
   local pid_file="$1"

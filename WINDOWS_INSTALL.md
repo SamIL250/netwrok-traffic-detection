@@ -327,6 +327,8 @@ curl http://127.0.0.1:8000/health
 
 | Topic | Guidance |
 |-------|----------|
+| **`start.ps1`: RedirectStandardOutput and RedirectStandardError are same** | Update the repo (fixed in `run.ps1`). Pull latest, then run `.\start.ps1 restart`. |
+| **Streamlit: `DLL load failed` / Application Control blocked** | Windows blocked pandas native libraries. See [Fix Application Control blocking Python](#fix-application-control-blocking-python) below. |
 | **Git Bash: `No module named 'nta'` in api.log** | Update the repo (fixed `PYTHONPATH` for Windows). Or use `.\start.ps1` in PowerShell. |
 | **Git Bash: API log says Python not found** | Old `run.sh` looked for Linux venv paths. Update the repo, or use `.\start.ps1` in PowerShell. |
 | **`Python was not found` / opens Microsoft Store** | Install Python from [python.org](https://www.python.org/downloads/) (not the Store). Turn off **App execution aliases** for `python.exe` and `python3.exe`. Use `py --version`, then `py -m venv .venv`, or call `.\.venv\Scripts\python.exe` directly. |
@@ -340,6 +342,71 @@ curl http://127.0.0.1:8000/health
 | **Database connection errors** | Verify `DATABASE_URL` format and that Neon allows connections from your network. |
 | **Agent 401 errors** | Ensure `AGENT_API_KEY` in `.env` matches on server and agent; restart all services after changes. |
 | **Login issues** | Hard-refresh the browser (Ctrl+Shift+R) or use a private/incognito window after password resets. |
+
+---
+
+## Fix Application Control blocking Python
+
+If Streamlit shows:
+
+```text
+ImportError: DLL load failed while importing sparse:
+An Application Control policy has blocked this file.
+```
+
+Windows security is blocking compiled Python libraries (`.pyd` / `.dll`) inside `.venv`. This is **not** an app bug — fix it on the machine.
+
+Try these steps **in order**:
+
+### 1. Unblock downloaded files
+
+If the project came from a ZIP or was copied from the web, Windows may mark it as untrusted.
+
+In **PowerShell** (project folder):
+
+```powershell
+Get-ChildItem -Path . -Recurse | Unblock-File
+```
+
+Or in File Explorer: right-click the project folder → **Properties** → if you see **Unblock**, check it → **Apply**.
+
+### 2. Move the project off the Desktop
+
+Folders like **Desktop** and **Downloads** are more often restricted. Move to something like:
+
+```text
+C:\dev\netwrok-traffic-detection
+```
+
+Then recreate the venv there:
+
+```powershell
+cd C:\dev\netwrok-traffic-detection
+Remove-Item -Recurse -Force .venv
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+.\start.ps1
+```
+
+### 3. Turn off Smart App Control (Windows 11)
+
+1. **Settings → Privacy & security → Windows Security**
+2. **App & browser control → Smart App Control**
+3. Set to **Off**
+
+Restart the PC, then try `./start.sh` or `.\start.ps1` again.
+
+> Note: On some Windows 11 installs, Smart App Control can only be turned off once.
+
+### 4. Allow Python in Windows Security
+
+1. **Windows Security → Virus & threat protection → Manage settings**
+2. Under **Exclusions**, add the project folder (e.g. `C:\dev\netwrok-traffic-detection`)
+
+### 5. School / work laptop
+
+If the PC is managed by IT, **AppLocker** or **WDAC** may block unsigned DLLs. An admin may need to allow Python or your project path. There is no code-only workaround for that.
 
 ---
 

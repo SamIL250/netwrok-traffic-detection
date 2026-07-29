@@ -64,6 +64,10 @@ function Start-BackgroundProcess {
         return
     }
 
+    $ErrorLogFile = "$LogFile.err"
+    if (Test-Path $LogFile) { Remove-Item $LogFile -Force }
+    if (Test-Path $ErrorLogFile) { Remove-Item $ErrorLogFile -Force }
+
     Write-Host "Starting $Name..."
     $process = Start-Process `
         -FilePath $Python `
@@ -71,7 +75,7 @@ function Start-BackgroundProcess {
         -WorkingDirectory $RootDir `
         -WindowStyle Hidden `
         -RedirectStandardOutput $LogFile `
-        -RedirectStandardError $LogFile `
+        -RedirectStandardError $ErrorLogFile `
         -PassThru
 
     $process.Id | Set-Content $PidFile
@@ -114,7 +118,7 @@ function Wait-ForApi {
             Start-Sleep -Seconds 1
         }
     }
-    Write-Error "API did not become ready in time. Check $ApiLog"
+    Write-Error "API did not become ready in time. Check $ApiLog and ${ApiLog}.err"
 }
 
 function Start-Services {
@@ -179,5 +183,11 @@ switch ($Command) {
     "status" { Show-Status }
     "restart" { Stop-Services; Start-Sleep -Seconds 1; Start-Services }
     "init-db" { & $Python (Join-Path $RootDir "scripts\init_db.py") }
-    "logs" { Get-Content $ApiLog, $DashboardLog, $AgentLog -Wait -ErrorAction SilentlyContinue }
+    "logs" {
+        Get-Content `
+            $ApiLog, "${ApiLog}.err", `
+            $DashboardLog, "${DashboardLog}.err", `
+            $AgentLog, "${AgentLog}.err" `
+            -Wait -ErrorAction SilentlyContinue
+    }
 }
